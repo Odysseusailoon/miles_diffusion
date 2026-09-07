@@ -36,6 +36,8 @@ class CondKwargs:
     # MiniMax H3 packed-sequence replay metadata (from rollout denoising_env).
     h3_packed_layout: dict | None = None
     h3_token_tags: torch.Tensor | None = None
+    # Krea2: joint text+image 3-axis RoPE coordinates (seq_len, 3).
+    pos: torch.Tensor | None = None
     # Cosmos3: token-level conditioning (no separate text encoder).
     text_ids: torch.Tensor | None = None
     text_mask: torch.Tensor | None = None
@@ -85,7 +87,8 @@ class Sample:
     inference_time_s: float | None = None
     # dispatch-time backlog observed when this sample's parse / reward was submitted
     parser_max_queue_depth: float | None = None
-    reward_max_queue_depth: float | None = None
+    # per reward pool, keyed by pool name
+    reward_max_queue_depth: dict[str, float] | None = None
     peak_memory_mb: float | None = None
 
     # Scalar from single RM (e.g. pickscore) or dict when combining multiple RMs

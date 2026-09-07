@@ -90,21 +90,26 @@ async def custom_generate(
 
 ### `--diffusion-step-strategy-path`
 
-Select which denoising steps contribute SDE log-probs / train pairs. Stock
-implementations live in `miles/rollout/step_strategy_hub.py`.
+Select which denoising steps contribute SDE log-probs / train pairs, and which
+latents the engine ships back for the trainer. Stock implementations live in
+`miles/rollout/step_strategy_hub.py`.
 
 ```python
 def strategy(args, sample, num_steps, seed) -> tuple[list[int] | None, list[int] | None]:
-    # returns (sde_step_indices, return_step_indices); return must be None today
+    # returns (sde_step_indices, return_step_indices)
+    # sde None = no SDE steps (pure ODE rollout)
+    # return None = the engine returns every step's latent
     ...
 ```
 
+`--rollout-return-full-trajectory` overrides `return_step_indices` back to all
+steps for debugging / A-B runs.
+
 | Stock | Behavior |
 |---|---|
-| `sde_window` | Random contiguous window (`--diffusion-num-sde-steps`, `--diffusion-sde-window-range`) |
-| `epoch_global_random_choice` | Per-epoch subset of `--diffusion-sde-candidate-steps` |
-
-Details: [SDE step backend](../advanced/sde-backend.md).
+| `sde_window` | Random contiguous window (`--diffusion-num-sde-steps`, `--diffusion-sde-window-range`); returns all latents its steps touch |
+| `epoch_global_random_choice` | Per-epoch subset of `--diffusion-sde-candidate-steps`; returns all latents its steps touch |
+| `ode_and_return_last` | No SDE steps, return only the final clean `x0` (DiffusionNFT) |
 
 ***
 
@@ -121,15 +126,25 @@ async def custom_rm(args, samples: list[Sample], **kwargs) -> list[float]:
 ```
 
 Wired only through `batched_async_rm` — implement per-sample routing inside your
-batched function if needed.
+batched function if needed. Once set, `--rm-type` and `metadata.rm_type` are ignored: the
+custom function is the whole dispatch.
 
 ```bash
 --custom-rm-path my_project.rewards.aesthetic_rm
 ```
 
+`--custom-rm-args` is an opaque string passed through as `args.custom_rm_args` for the
+custom RM to parse.
+
+Shipped custom RMs:
+
+| Path | What |
+|---|---|
+| `miles.rollout.rm_hub.weighted_mixture_rm.weighted_mixture_rm` | Weighted sum of built-in rewards (`hps`, `pickscore`, `ocr`), weights from `--custom-rm-args "hps=0.7,pickscore=0.3"`; returns a dict per sample, train on it with `--reward-key weighted`. See [Rewards](rewards.md) § Combining rewards. |
+
 HTTP / remote scoring: implement a batched custom RM and read `args.rm_url` (or
 your own flags). Encode images from `sample.generated_output` (see
-`_sample_to_rgb_hwc_uint8_frames` in `miles/rollout/rm_hub/pickscore.py`):
+`generated_output_to_rgb_hwc_uint8_frames` in `miles/utils/processing_utils.py`):
 
 ```python
 import aiohttp

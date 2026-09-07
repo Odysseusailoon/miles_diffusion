@@ -1,13 +1,13 @@
-"""SD3.5-medium OCR GRPO through the sglang-diffusion /rollout/generate path.
+"""SD3.5-medium HPS GRPO through the sglang-diffusion /rollout/generate path.
 
-2-GPU colocate: FSDP DP=2 plus 2 rollout engines time-multiplexed on the same GPUs.
+2-GPU colocate: FSDP DP=2, two rollout engines, and one HPS worker share the same GPUs.
 
 SD3.5 is gated, so HF_TOKEN must be set even when the weights are cached — sglang still
 fetches model_index.json from the hub at startup.
 
 Usage:
-    python3 scripts/run_diffusion_grpo_sd3_ocr_sglang.py
-    MILES_SCRIPT_DEBUG_ALIGNMENT=1 python3 scripts/run_diffusion_grpo_sd3_ocr_sglang.py
+    python3 scripts/run_diffusion_grpo_sd3_hps_sglang.py
+    MILES_SCRIPT_DEBUG_ALIGNMENT=1 python3 scripts/run_diffusion_grpo_sd3_hps_sglang.py
 """
 
 import os
@@ -19,7 +19,7 @@ import miles.utils.external_utils.command_utils as U
 
 MODEL = "stabilityai/stable-diffusion-3.5-medium"
 DATASET = "rockdu/miles-diffusion-datasets"
-DATASET_SUBSET = "flowgrpo_ocr"
+DATASET_SUBSET = "hpdv2"
 WANDB_PROJECT = "miles-diffusion-grpo"
 
 # master_sglang carries native SD3 /rollout/generate support; prepending it to PYTHONPATH
@@ -41,7 +41,7 @@ def prepare(args: ScriptArgs) -> str:
 
 
 def execute(args: ScriptArgs, data_dir: str) -> None:
-    run_name = f"diffusion_grpo_sd3_ocr_sglang_{U.create_run_id()}"
+    run_name = f"diffusion_grpo_sd3_hps_sglang_{U.create_run_id()}"
 
     ckpt_args = f"--hf-checkpoint {MODEL} --save {args.output_dir}/{run_name}/ckpt "
 
@@ -64,20 +64,19 @@ def execute(args: ScriptArgs, data_dir: str) -> None:
         "--diffusion-step-strategy-path miles.rollout.step_strategy_hub.sde_window "
         "--diffusion-num-sde-steps 10 "
         "--diffusion-sde-window-range 0,10 "
-        "--rollout-return-full-trajectory "
     )
 
     eval_args = "--diffusion-eval-num-steps 40 "
 
-    grpo_args = (
-        "--advantage-estimator grpo --globalize-reward-std --diffusion-clip-range 1e-4 --diffusion-kl-beta 0.04 "
-    )
+    grpo_args = "--advantage-estimator grpo --diffusion-clip-range 1e-4 --diffusion-kl-beta 0.01 "
 
     optimizer_args = "--lr 3e-4 --adam-beta2 0.999 --weight-decay 1e-4 "
 
     lora_args = "--use-lora --lora-ipc-weight-sync --lora-rank 32 --lora-alpha 64 --lora-init-weights gaussian "
 
-    reward_args = "--rm-type ocr "
+    reward_args = (
+        "--rm-type hps " "--hps-num-workers 1 " "--hps-batch-size 8 " "--hps-version v2.1 " "--hps-reward-colocate "
+    )
 
     wandb_args = U.get_default_wandb_args(
         __file__, run_id=run_name, project=WANDB_PROJECT, wandb_log_num_images=8, wandb_log_image_interval=10
@@ -85,8 +84,6 @@ def execute(args: ScriptArgs, data_dir: str) -> None:
 
     sglang_args = (
         "--use-miles-router "
-        "--rollout-fetch-in-parser "
-        "--rollout-parser-num-workers 16 "
         "--sglang-server-concurrency 8 "
         "--sglang-dit-precision fp16 "
         "--sglang-vae-slicing "
