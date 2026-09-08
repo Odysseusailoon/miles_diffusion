@@ -45,7 +45,8 @@ classified explicitly:
 | `--fsdp-attention-backend`             | How determinism is obtained                                                                     |
 | -------------------------------------- | ----------------------------------------------------------------------------------------------- |
 | unset, `*native*`, `*math*` (SDPA)     | torch's global flag covers it. `math` backends are deterministic by construction.               |
-| `*flash*` (flash-attn, FA3)            | torch's flag cannot reach it — miles patches `deterministic=True` onto the kernel entry points. |
+| `_flash_3` (dense FlashAttention-3)    | torch's flag cannot reach diffusers' op — the trainer binds FA3 itself and reads the flag per call. |
+| `flash*` (flash-attn 2, FA3 varlen)    | torch's flag cannot reach it — miles patches `deterministic=True` onto the kernel entry points. |
 | `sage`, `xformers`, `flex`, `aiter`, … | No hook exists. **Rejected.**                                                                   |
 
 
@@ -54,13 +55,21 @@ misconfiguration fails in seconds instead of after a multi-node startup.
 
 A flash backend that is installed but exposes no `deterministic` parameter is also rejected, with a message naming which kernels were found.
 
-### How the flash patch works
+### How FA3 is bound
 
-For diffusers-backed families, miles wraps the dispatch functions diffusers routes flash through:
+diffusers' `_flash_3` backend is a torch custom op with no autograd formula and a hardcoded
+`deterministic=False`, so miles re-registers that backend on its own `flash_attn_interface` binding
+(`miles/backends/fsdp_utils/flash_attention_3.py`) when the backend is selected. The model's
+processors and Ulysses self-attention dispatch to it; ring attention drives the same kernels through
+torch's ring templates. Every call passes `torch.are_deterministic_algorithms_enabled()` as FA3's
+`deterministic`, so the binding follows the same switch as the native kernels.
+
+### How the flash-attn 2 / FA3 varlen patch works
+
+For diffusers-backed families, miles wraps the dispatch functions diffusers routes these through:
 
 ```
-flash_attn_func         flash_attn_varlen_func
-flash_attn_3_func       flash_attn_3_varlen_func
+flash_attn_func         flash_attn_varlen_func         flash_attn_3_varlen_func
 ```
 
 Each entry point with a `deterministic` parameter is replaced by

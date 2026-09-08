@@ -27,6 +27,8 @@ from typing import Any
 import torch
 from diffusers import DiffusionPipeline
 
+from . import flash_attention_3
+from .arguments import is_flash3_backend
 from .models.parallel_plan import FSDPParallelPlan
 from .sequence_parallel.diffusers_dispatch import install_diffusers_usp_patch
 from .sequence_parallel.plan import MILES_SP_PLAN_ATTR, SequenceParallelPlan
@@ -150,6 +152,8 @@ class DiffusersModelBackend(BaseModelBackend):
         super().__init__(train_pipeline_config)
 
     def set_attention_backend(self, model: torch.nn.Module, backend: str) -> None:
+        if is_flash3_backend(backend):
+            flash_attention_3.install_diffusers_backend()
         model.set_attention_backend(backend)
 
     def enable_gradient_checkpointing(self, model: torch.nn.Module) -> None:
@@ -173,10 +177,9 @@ class DiffusersModelBackend(BaseModelBackend):
         install_diffusers_usp_patch(model, parallel_state)
 
     def enable_deterministic_attention(self, backend: str | None) -> None:
-        # Configure every installed kernel we know how to control. Native/SDPA
-        # determinism is handled by torch.use_deterministic_algorithms; unsupported
-        # opaque kernels are rejected by argument validation before actor startup.
-        self._enable_deterministic_flash_attention()
+        # the trainer's FA3 binding follows torch.use_deterministic_algorithms on its own
+        if not is_flash3_backend(backend):
+            self._enable_deterministic_flash_attention()
 
     def _enable_deterministic_flash_attention(self) -> None:
         """Patch diffusers flash entrypoints to deterministic=True (backward only; idempotent)."""

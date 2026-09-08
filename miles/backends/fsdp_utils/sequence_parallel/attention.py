@@ -4,11 +4,15 @@ Layout convention matches sglang-diffusion's USP (heads sharded across the ulyss
 group inside attention, sequence sharded outside), so training numerics stay
 aligned with rollout; the collectives only move data. Local attention is torch
 SDPA by default and may be injected by the model adapter; ring attention uses
-torch's ring templates with an aten fused op selected per RING_KERNELS.
+torch's ring templates with a fused kernel selected per RING_KERNELS.
 """
+
+import contextlib
 
 import torch
 import torch.distributed as dist
+
+from .. import flash_attention_3
 
 
 class _GatherSequence(torch.autograd.Function):
@@ -103,81 +107,97 @@ def ulysses_output_all_to_all(x, group):
     return x.permute(2, 1, 0, 3, 4).contiguous().reshape(b, s_local, h_global, d)
 
 
-# --fsdp-attention-backend values ring attention honors: aten ops returning LSE with a real backward.
-RING_KERNELS = {None: "flash", "_native_flash": "flash", "_native_cudnn": "cudnn"}
+# --fsdp-attention-backend values ring attention honors: fused kernels returning LSE with a real backward.
+RING_KERNELS = {None: "flash", "_native_flash": "flash", "_native_cudnn": "cudnn", "_flash_3": "flash3"}
+
+
+@contextlib.contextmanager
+def _ring_templates():
+    # torch's private ring templates, at their torch >= 2.11 home (2.9: experimental._attention).
+    from torch.distributed.tensor.experimental._context_parallel import _attention as ring
+
+    # the templates refuse non-causal attention while this process-global option is on
+    load_balance = ring._cp_options.enable_load_balance
+    ring._cp_options.enable_load_balance = False
+    try:
+        yield ring
+    finally:
+        ring._cp_options.enable_load_balance = load_balance
 
 
 class _RingAttention(torch.autograd.Function):
-    """Ring attention via torch's ring templates (fwd + reverse-ring bwd), aten fused ops.
+    """Ring attention via torch's ring templates (fwd + reverse-ring bwd).
 
-    q/k/v: [B, H, S, D].
+    q/k/v: [B, H, S, D]. The aten kernels return their backward's bookkeeping
+    (cumulative lengths, philox state) from the forward; FA3 needs only out/LSE.
     """
 
     @staticmethod
     def forward(ctx, query, key, value, group, scale, kernel):
-        # torch's private ring templates, at their torch >= 2.11 home (2.9: experimental._attention).
-        from torch.distributed.tensor.experimental._context_parallel._attention import _templated_ring_attention
-
-        if kernel == "cudnn":
-            op = torch.ops.aten._scaled_dot_product_cudnn_attention
-            # cudnn computes LSE only on request; ring merging always needs it
-            op_kwargs = {"attn_bias": None, "compute_log_sumexp": True}
-        else:
-            op = torch.ops.aten._scaled_dot_product_flash_attention
-            op_kwargs = {}
-        out, lse, cum_q, cum_k, max_q, max_k, philox_seed, philox_offset, _dbg = _templated_ring_attention(
-            group,
-            2,
-            op,
-            query=query,
-            key=key,
-            value=value,
-            is_causal=False,
-            dropout_p=0.0,
-            scale=scale,
-            **op_kwargs,
-        )
+        ring_kwargs = {"query": query, "key": key, "value": value, "is_causal": False, "scale": scale}
+        with _ring_templates() as ring:
+            if kernel == "flash3":
+                out, lse = ring._templated_ring_attention(group, 2, flash_attention_3.ring_forward_op, **ring_kwargs)
+                aten_state = ()
+            else:
+                if kernel == "cudnn":
+                    op = torch.ops.aten._scaled_dot_product_cudnn_attention
+                    # cudnn computes LSE only on request; ring merging always needs it
+                    op_kwargs = {"attn_bias": None, "compute_log_sumexp": True}
+                else:
+                    op = torch.ops.aten._scaled_dot_product_flash_attention
+                    op_kwargs = {}
+                out, lse, cum_q, cum_k, max_q, max_k, philox_seed, philox_offset, _dbg = (
+                    ring._templated_ring_attention(group, 2, op, dropout_p=0.0, **ring_kwargs, **op_kwargs)
+                )
+                ctx.max_q, ctx.max_k = max_q, max_k
+                aten_state = (cum_q, cum_k, philox_seed, philox_offset)
         out = out.to(query.dtype)
-        ctx.save_for_backward(query, key, value, out, lse, cum_q, cum_k, philox_seed, philox_offset)
-        ctx.group, ctx.scale, ctx.max_q, ctx.max_k = group, scale, max_q, max_k
-        ctx.kernel = kernel
+        ctx.save_for_backward(query, key, value, out, lse, *aten_state)
+        ctx.group, ctx.scale, ctx.kernel = group, scale, kernel
         return out
 
     @staticmethod
     def backward(ctx, grad_out):
-        from torch.distributed.tensor.experimental._context_parallel._attention import (
-            _templated_ring_attention_backward,
-        )
-
-        if ctx.kernel == "cudnn":
-            op = torch.ops.aten._scaled_dot_product_cudnn_attention_backward.default
-            op_kwargs = {"attn_bias": None}
-        else:
-            op = torch.ops.aten._scaled_dot_product_flash_attention_backward.default
-            op_kwargs = {}
-        query, key, value, out, lse, cum_q, cum_k, philox_seed, philox_offset = ctx.saved_tensors
-        grad_q, grad_k, grad_v, *_ = _templated_ring_attention_backward(
-            ctx.group,
-            2,
-            op,
-            grad_out=grad_out.contiguous(),
-            grad_out_name="grad_out",
-            query=query,
-            key=key,
-            value=value,
-            out=out,
-            logsumexp=lse,
-            is_causal=False,
-            cum_seq_q=cum_q,
-            cum_seq_k=cum_k,
-            max_q=ctx.max_q,
-            max_k=ctx.max_k,
-            dropout_p=0.0,
-            philox_seed=philox_seed,
-            philox_offset=philox_offset,
-            scale=ctx.scale,
-            **op_kwargs,
-        )
+        query, key, value, out, lse, *aten_state = ctx.saved_tensors
+        ring_kwargs = {
+            "grad_out": grad_out.contiguous(),
+            "grad_out_name": "grad_out",
+            "query": query,
+            "key": key,
+            "value": value,
+            "out": out,
+            "logsumexp": lse,
+            "is_causal": False,
+            "scale": ctx.scale,
+        }
+        with _ring_templates() as ring:
+            if ctx.kernel == "flash3":
+                grad_q, grad_k, grad_v = ring._templated_ring_attention_backward(
+                    ctx.group, 2, flash_attention_3.ring_backward_op, **ring_kwargs
+                )
+            else:
+                if ctx.kernel == "cudnn":
+                    op = torch.ops.aten._scaled_dot_product_cudnn_attention_backward.default
+                    op_kwargs = {"attn_bias": None}
+                else:
+                    op = torch.ops.aten._scaled_dot_product_flash_attention_backward.default
+                    op_kwargs = {}
+                cum_q, cum_k, philox_seed, philox_offset = aten_state
+                grad_q, grad_k, grad_v, *_ = ring._templated_ring_attention_backward(
+                    ctx.group,
+                    2,
+                    op,
+                    cum_seq_q=cum_q,
+                    cum_seq_k=cum_k,
+                    max_q=ctx.max_q,
+                    max_k=ctx.max_k,
+                    dropout_p=0.0,
+                    philox_seed=philox_seed,
+                    philox_offset=philox_offset,
+                    **ring_kwargs,
+                    **op_kwargs,
+                )
         return grad_q, grad_k, grad_v, None, None, None
 
 
