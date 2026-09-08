@@ -88,6 +88,26 @@ live in `rollout_args`, a `--micro-batch-size-*` flag in `perf_args`).
 | `perf_args` | Gradient checkpointing, micro-batch tiling, parser workers |
 | `misc_args` | GPU layout, `--colocate`, `--deterministic-mode` |
 
+## One-step async DiffusionNFT
+
+`python3 scripts/run_diffusion_nft_krea2.py --train-async` runs training and rollout on
+separate resident GPU pools. It generates the next batch during training and waits for
+that generation to finish before publishing new weights. Async smoke mode runs three
+rollouts so it exercises both prefetch and weight updates.
+
+When both rollout and reference use EMA, the async entrypoint automatically retains the
+sampling EMA for the reference forward. EMA advances once per completed training rollout;
+initial synchronization and repeated weight publication do not advance its decay schedule.
+
+Checkpoints include the current EMA weights and step. Resume restores the prompt cursor and
+EMA, then starts a fresh prefetch pipeline. It regenerates any prefetched batch, so resumed
+training is not guaranteed to reproduce an uninterrupted trajectory. The first resumed batch
+uses the restored EMA for both sampling and reference. Older checkpoints without EMA state
+initialize it from the loaded model and emit a warning.
+
+`perf/drain_wait_time` measures the generation wait before checkpoint I/O. Compare throughput
+with GPU counts included: this recipe uses four GPUs for async OCR versus two for colocated OCR.
+
 ## Ways to override a recipe
 
 From lightest to heaviest:

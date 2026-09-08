@@ -65,7 +65,8 @@ def prepare(args: ScriptArgs) -> str:
 def execute(args: ScriptArgs, data_dir: str) -> None:
     mode = "async" if args.train_async else "colocate"
     run_name = f"diffusion_nft_krea2_{args.reward}_{mode}_{U.create_run_id()}"
-    num_rollout = args.num_rollout or (1 if args.smoke else 100)
+    smoke_rollouts = 3 if args.train_async else 1
+    num_rollout = args.num_rollout or (smoke_rollouts if args.smoke else 100)
 
     ckpt_args = f"--hf-checkpoint {MODEL} --save {args.output_dir}/{run_name}/ckpt --save-interval 20 "
 

@@ -59,6 +59,34 @@ class EmaShadow:
             sh.mul_(delta).add_(_local(live.detach()).to(sh.device), alpha=1.0 - delta)
         return delta
 
+    def state_dict(self) -> dict:
+        # Preserve FSDP shard metadata so DCP can restore on a different mesh.
+        shadow = [
+            (
+                DTensor.from_local(
+                    sh,
+                    device_mesh=param.device_mesh,
+                    placements=param.placements,
+                    shape=param.shape,
+                    stride=param.stride(),
+                )
+                if isinstance(param, DTensor)
+                else sh
+            )
+            for param, sh in zip(self.params, self.shadow, strict=True)
+        ]
+        return {"shadow": shadow, "step": self.step}
+
+    @torch.no_grad()
+    def load_state_dict(self, state_dict: dict) -> None:
+        for sh, restored in zip(self.shadow, state_dict["shadow"], strict=True):
+            sh.copy_(_local(restored))
+        self.step = int(state_dict["step"])
+        # Resume starts a fresh pipeline: its first two batches use the restored EMA.
+        if self.lagged is not None:
+            for lg, sh in zip(self.lagged, self.shadow, strict=True):
+                lg.copy_(sh)
+
     @contextmanager
     def swap_in(self, lagged: bool = False):
         """Temporarily expose EMA weights (or the pre-update EMA snapshot) as the live parameters."""
