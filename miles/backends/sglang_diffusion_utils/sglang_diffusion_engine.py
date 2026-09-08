@@ -268,6 +268,49 @@ class SGLangDiffusionEngine(RayActor):
             payload,
         )
 
+    def init_weights_update_group(
+        self, master_address, master_port, rank_offset, world_size, group_name, backend="nccl"
+    ):
+        return self._make_request(
+            "init_weights_update_group",
+            {
+                "master_address": master_address,
+                "master_port": master_port,
+                "rank_offset": rank_offset,
+                "world_size": world_size,
+                "group_name": group_name,
+                "backend": backend,
+            },
+        )
+
+    def destroy_weights_update_group(self, group_name):
+        return self._make_request("destroy_weights_update_group", {"group_name": group_name})
+
+    def update_weights_from_distributed(
+        self,
+        names,
+        dtypes,
+        shapes,
+        group_name,
+        target_modules,
+        weight_update_mode=None,
+        lora_alpha=None,
+        lora_rank=None,
+    ):
+        return self._make_request(
+            "update_weights_from_distributed",
+            {
+                "names": names,
+                "dtypes": dtypes,
+                "shapes": shapes,
+                "group_name": group_name,
+                "target_modules": target_modules,
+                "weight_update_mode": weight_update_mode,
+                "lora_alpha": lora_alpha,
+                "lora_rank": lora_rank,
+            },
+        )
+
     def get_weights_checksum(self, module_names: list[str] | None = None) -> dict:
         """Query the live engine for SHA-256 checksums of the named pipeline modules.
 

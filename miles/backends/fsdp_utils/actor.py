@@ -30,10 +30,11 @@ from miles.utils.train_data_utils import (
 
 from . import checkpoint
 from .diffusion_update_weight_utils import (
+    DiffusionUpdateWeightFromDistributed,
     DiffusionUpdateWeightFromTensor,
     DiffusionUpdateWeightFromTensorLoRA,
-    DiffusionUpdateWeightFromTensorLoRACPU,
     DiffusionUpdateWeightFromTensorLoRAIPC,
+    DiffusionUpdateWeightLoRADistributed,
 )
 from .ema import EmaShadow
 from .input_dtype_policy import apply_input_dtype_policy
@@ -233,8 +234,11 @@ class FSDPTrainRayActor(TrainRayActor):
             self.weight_updater = None
         elif self.args.use_lora and self.args.lora_ipc_weight_sync:
             self.weight_updater = DiffusionUpdateWeightFromTensorLoRAIPC(self.args, self.models)
-        elif self.args.use_lora and not self.args.colocate:
-            self.weight_updater = DiffusionUpdateWeightFromTensorLoRACPU(self.args, self.models)
+        elif not self.args.colocate:
+            updater = (
+                DiffusionUpdateWeightLoRADistributed if self.args.use_lora else DiffusionUpdateWeightFromDistributed
+            )
+            self.weight_updater = updater(self.args, self.models)
         elif self.args.use_lora:
             self.weight_updater = DiffusionUpdateWeightFromTensorLoRA(self.args, self.models)
         else:
