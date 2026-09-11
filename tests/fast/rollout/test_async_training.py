@@ -148,6 +148,7 @@ def run_loop(tmp_path, monkeypatch, *, train_delay, rollout_delay, start=0, coun
         input_key="input",
         metadata_key="metadata",
         rollout_seed=42,
+        rollout_shuffle=False,
         n_samples_per_prompt=1,
         save=str(tmp_path / "ckpt"),
         load=str(tmp_path / "ckpt") if restored else None,

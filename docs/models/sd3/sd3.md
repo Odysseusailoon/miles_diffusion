@@ -13,7 +13,7 @@ DiT transformer with dual text-encoder conditioning (`encoder_hidden_states` +
 
 - Single DiT component — weight sync targets `--update-weight-target-module transformer` (default).
 - LoRA on all attention projections (self-attn + cross-attn add projections).
-- Supports **Flow-GRPO** (OCR) and **DiffusionNFT** (PickScore) objectives.
+- Supports **Flow-GRPO** (OCR or HPS) and **DiffusionNFT** (PickScore) objectives.
 - Gated Hugging Face model — requires `HF_TOKEN`.
 
 ## 2. Supported variants
@@ -51,6 +51,7 @@ Prompt datasets live under
 | Recipe | Subset | Train path |
 |---|---|---|
 | GRPO + OCR | `flowgrpo_ocr` | `.../flowgrpo_ocr/train.jsonl` |
+| GRPO + HPS | `hpdv2` | `.../hpdv2/train.jsonl` |
 | NFT + PickScore | `flowgrpo_pickscore` | `.../flowgrpo_pickscore/train.jsonl` |
 
 Launch scripts download the matching subset automatically via
@@ -102,6 +103,8 @@ All recipes are Python modules under `scripts/`. Each exposes a Typer CLI
 | Script | Reward | GPUs | Algorithm |
 |---|---|---|---|
 | `run_diffusion_grpo_sd3_ocr_sglang.py` | OCR (CPU) | 2 colocate | Flow-GRPO |
+| `run_diffusion_grpo_sd3_hps_sglang.py` | HPS | 2 colocate | Flow-GRPO |
+| `run_diffusion_grpo_sd3_ocr_pickscore_sglang.py` | 0.8 OCR + 0.2 PickScore | 2 colocate | Flow-GRPO |
 | `run_diffusion_nft_sd3_pickscore.py` | PickScore | 3 (2+1) | DiffusionNFT |
 
 ### 5.2 Flow-GRPO + OCR (2 GPU colocate)
@@ -120,7 +123,49 @@ Walkthrough: [Quick Start](../../getting-started/quick-start.md).
 
 E2E test: `tests/e2e/short/test_sd3_ocr_grpo_2xGPU.py`.
 
-### 5.3 DiffusionNFT + PickScore (3 GPU)
+
+### 5.3 Flow-GRPO + HPS (2 GPU colocate)
+
+Canonical script: `scripts/run_diffusion_grpo_sd3_hps_sglang.py`
+
+**Status:** [📈 V — Verified](../../user-guide/recipe-verification.md#v) — 600 rollouts
+(2 optimizer steps each, 1,200 in total) on 2×H200; `rollout/reward/raw_mean` 0.284 → 0.349
+(mean of the last 100 rollouts, peak 10-rollout moving average 0.362).
+
+```bash
+export HF_TOKEN=...
+python3 scripts/run_diffusion_grpo_sd3_hps_sglang.py \
+  --cuda-visible-devices 6,7
+```
+
+The recipe uses the SD3 Flow-GRPO SDE, LoRA and precision configuration of the OCR
+recipe, swaps in the deduplicated `hpdv2` prompts and `--rm-type hps`, and colocates one
+HPS reward actor with the train and rollout workers. It keeps Flow-GRPO's own KL weight
+(`--diffusion-kl-beta 0.01`) and group-wise advantage std instead of the OCR recipe's
+`--diffusion-kl-beta 0.04 --globalize-reward-std`.
+
+### 5.4 Flow-GRPO + OCR & PickScore (2 GPU colocate)
+
+Script: `scripts/run_diffusion_grpo_sd3_ocr_pickscore_sglang.py`
+
+**Status:** [📈 V — Verified](../../user-guide/recipe-verification.md#v) — 600 rollouts
+(2 optimizer steps each) on 2×H200: `ocr_mean` 0.34 → 0.80, `pickscore_mean` 0.80 → 0.83,
+`weighted_mean` 0.43 → 0.81 (means of the last 100 rollouts; 10-rollout moving-average peaks
+0.88 / 0.85 / 0.87).
+
+```bash
+export HF_TOKEN=...
+python3 scripts/run_diffusion_grpo_sd3_ocr_pickscore_sglang.py \
+  --cuda-visible-devices 6,7
+```
+
+The OCR recipe with PickScore mixed in through `weighted_mixture_rm`
+(`--custom-rm-args ocr=0.8,pickscore=0.2 --reward-key weighted`, the weighting Stepwise-Flow-GRPO
+uses for its OCR task) and `--rollout-shuffle`; the PickScore actor is colocated next to the CPU
+OCR pool. Every other flag matches the OCR recipe. See [Rewards](../../user-guide/rewards.md)
+§ Combining rewards for how the mixture is wired.
+
+### 5.5 DiffusionNFT + PickScore (3 GPU)
 
 Script: `scripts/run_diffusion_nft_sd3_pickscore.py`
 
@@ -140,20 +185,23 @@ MILES_SCRIPT_SMOKE=1 python3 scripts/run_diffusion_nft_sd3_pickscore.py
 
 ### Recipe comparison
 
-| | GRPO + OCR | NFT + PickScore |
-|---|---|---|
-| Script | `run_diffusion_grpo_sd3_ocr_sglang.py` | `run_diffusion_nft_sd3_pickscore.py` |
-| `--loss-type` | `policy_loss` (default) | `nft` |
-| SDE | Full window, noise=0.7, CFG=4.5 | ODE, noise=0 |
-| Reference | LoRA base KL | EMA (`--use-ema`) |
-| Reward GPU | None (CPU OCR) | Dedicated (3 GPU total) |
-| Deterministic e2e | `test_sd3_ocr_grpo_2xGPU` | `test_sd3_nft_pickscore_3xGPU` |
+| | GRPO + OCR | GRPO + HPS | GRPO + OCR & PickScore | NFT + PickScore |
+|---|---|---|---|---|
+| Script | `run_diffusion_grpo_sd3_ocr_sglang.py` | `run_diffusion_grpo_sd3_hps_sglang.py` | `run_diffusion_grpo_sd3_ocr_pickscore_sglang.py` | `run_diffusion_nft_sd3_pickscore.py` |
+| `--loss-type` | `policy_loss` (default) | `policy_loss` (default) | `policy_loss` (default) | `nft` |
+| SDE | Full window, noise=0.7, CFG=4.5 | Full window, noise=0.7, CFG=4.5 | Full window, noise=0.7, CFG=4.5 | ODE, noise=0 |
+| Reference | LoRA base KL (β 0.04) | LoRA base KL (β 0.01) | LoRA base KL (β 0.04) | EMA (`--use-ema`) |
+| Reward placement | CPU OCR | Colocated HPS actor | CPU OCR + colocated PickScore actor | Dedicated PickScore GPU |
+| Verification | FG | V | V | FG |
 
 ## 6. Recipe configuration
 
 ### GPU layout
 
 **GRPO + OCR (default script):** 2 GPUs colocated (`--colocate`); OCR on CPU Ray actors.
+
+**GRPO + HPS:** 2 GPUs colocated (`--colocate --hps-reward-colocate`); one HPS
+actor shares the rollout GPUs.
 
 **NFT + PickScore:**
 
@@ -163,9 +211,9 @@ MILES_SCRIPT_SMOKE=1 python3 scripts/run_diffusion_nft_sd3_pickscore.py
 | PickScore reward | 1 | `--pickscore-num-workers 1`, `--pickscore-num-gpus-per-worker 1.0` |
 | **Total** | **3** | `--num-gpus-per-node 3` |
 
-PickScore runs as a Ray actor pool on a dedicated GPU. With `--colocate-reward`
-(not used in the default script), reward workers share rollout GPUs at 0.05 GPU
-per worker — useful only when GPU count is tight.
+PickScore runs as a Ray actor pool on a dedicated GPU. With `--pickscore-reward-colocate`
+(not used in the default script), reward workers share the rollout GPUs
+instead — useful only when GPU count is tight.
 
 ### Algorithm flags
 
@@ -181,6 +229,18 @@ per worker — useful only when GPU count is tight.
 | Weight sync | `--lora-ipc-weight-sync` (colocate IPC merge) |
 | Determinism | `--deterministic-mode` (CI / e2e parity) |
 
+**Flow-GRPO + HPS:** uses the same SDE, LoRA and precision flags as the OCR recipe,
+with these settings of its own:
+
+| Setting | Value |
+|---|---|
+| Reference | `--diffusion-kl-beta 0.01` |
+| Advantage | Group-wise std (no `--globalize-reward-std`) |
+| Reward | `--rm-type hps --hps-version v2.1` |
+| Reward worker | One actor, batch size 8 |
+| Placement | `--hps-reward-colocate` |
+| Prompt subset | `hpdv2` |
+
 **DiffusionNFT + PickScore:**
 
 | Setting | Value |
@@ -194,7 +254,7 @@ per worker — useful only when GPU count is tight.
 
 ## 7. LoRA and weight sync
 
-Both SD3 recipes use LoRA with IPC weight sync:
+All SD3 recipes use LoRA with IPC weight sync:
 
 ```bash
 --use-lora \
@@ -210,7 +270,7 @@ merge internals.
 
 ## 8. Precision notes
 
-Both SD3 launch scripts use fp16 DiT forward:
+All SD3 launch scripts use fp16 DiT forward:
 
 ```bash
 --diffusion-forward-dtype fp16 \
@@ -240,6 +300,17 @@ acceptance range:
 
 Online runs: wandb project **`miles-diffusion-grpo`**.
 
+### Flow-GRPO + OCR & PickScore
+
+Observed rewards from one `scripts/run_diffusion_grpo_sd3_ocr_pickscore_sglang.py` run (600 rollouts);
+the weighted sum GRPO trains on, then its two components:
+
+![Flow-GRPO OCR + PickScore weighted reward](../../assets/images/sd3/grpo-ocr-pickscore-weighted-reward.png)
+
+![Flow-GRPO OCR + PickScore: OCR component](../../assets/images/sd3/grpo-ocr-pickscore-ocr-reward.png)
+
+![Flow-GRPO OCR + PickScore: PickScore component](../../assets/images/sd3/grpo-ocr-pickscore-pickscore-reward.png)
+
 ### DiffusionNFT + PickScore
 
 Observed `rollout/reward/raw_mean` from one `scripts/run_diffusion_nft_sd3_pickscore.py` run (100 rollouts):
@@ -253,7 +324,7 @@ by the E2E fixture.
 ## 10. Pairs well with
 
 - [Quick Start](../../getting-started/quick-start.md) — SD3.5 Flow-GRPO OCR walkthrough.
-- [Rewards](../../user-guide/rewards.md) — OCR and PickScore scoring.
+- [Rewards](../../user-guide/rewards.md) — OCR, HPS and PickScore scoring.
 - [Customization](../../user-guide/customization.md) — `--*-path` plug-points.
 - [SDE step backend](../../advanced/sde-backend.md) — SDE window (GRPO) vs ODE (NFT).
-- [LoRA weight sync](../../advanced/lora.md) — IPC merge used by both recipes.
+- [LoRA weight sync](../../advanced/lora.md) — IPC merge used by all SD3 recipes.

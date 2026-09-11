@@ -13,8 +13,8 @@ from tests.ci.e2e_metrics_registry import register_e2e_ci
 register_e2e_ci(
     est_time=1800,
     suite="stage-c-5-gpu-h200",
-    script="scripts/run_diffusion_nft_krea2.py",
-    args=["--train-async", "--reward", "ocr", "--num-rollout", "4"],
+    script="scripts/run_diffusion_nft_krea2_async.py",
+    args=["--reward", "ocr", "--num-rollout", "4"],
     labels=["e2e"],
     metrics=[
         "rollout/reward/raw_num_samples",
