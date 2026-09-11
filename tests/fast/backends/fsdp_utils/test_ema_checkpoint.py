@@ -25,7 +25,7 @@ def make_actor(tmp_path):
         model=model,
         optimizer=optimizer,
         lr_scheduler=torch.optim.lr_scheduler.LambdaLR(optimizer, lambda step: 1.0),
-        ema_shadow=EmaShadow(model.parameters(), decay=0.5, flat_steps=10, keep_lagged=True),
+        ema_shadow=EmaShadow(model.parameters(), decay=0.5, flat_steps=10, keep_previous_ema=True),
         global_step=2,
         micro_step=0,
         train_pipeline_config=Namespace(optimizer_state_allowed_missing=[]),
@@ -59,13 +59,13 @@ def test_checkpoint_restores_ema_and_restarts_reference(tmp_path, monkeypatch, l
         restored = make_actor(tmp_path)
         payload = checkpoint.load(restored)
         # Actor initializes its EMA from the already-restored live model.
-        restored.ema_shadow = EmaShadow(restored.model.parameters(), decay=0.5, flat_steps=10, keep_lagged=True)
+        restored.ema_shadow = EmaShadow(restored.model.parameters(), decay=0.5, flat_steps=10, keep_previous_ema=True)
         checkpoint.finalize_load(restored, payload)
         assert restored.args.start_rollout_id == 2
         assert restored.ema_shadow.step == 2
         expected = original.model.weight if legacy else original.ema_shadow.shadow[0]
         torch.testing.assert_close(restored.ema_shadow.shadow[0], expected)
-        torch.testing.assert_close(restored.ema_shadow.lagged[0], expected)
+        torch.testing.assert_close(restored.ema_shadow.previous_ema[0], expected)
         torch.testing.assert_close(restored.model.weight, original.model.weight)
         if not legacy:
             assert original.ema_shadow.update() == restored.ema_shadow.update()
@@ -90,8 +90,8 @@ def test_ema_checkpoint_reshards_to_single_process(tmp_path):
         timeout=180,
     )
     param = torch.nn.Parameter(torch.zeros(5, 3))
-    restored = EmaShadow([param], keep_lagged=True)
+    restored = EmaShadow([param], keep_previous_ema=True)
     dcp.load({"ema": restored}, checkpoint_id=str(tmp_path / "ema"))
     assert restored.step == 2
     torch.testing.assert_close(restored.shadow[0], torch.arange(15).reshape(5, 3).float() + 1.25)
-    torch.testing.assert_close(restored.lagged[0], restored.shadow[0])
+    torch.testing.assert_close(restored.previous_ema[0], restored.shadow[0])

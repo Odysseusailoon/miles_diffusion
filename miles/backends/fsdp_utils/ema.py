@@ -15,7 +15,13 @@ def _local(t: torch.Tensor) -> torch.Tensor:
 
 
 class EmaShadow:
-    """EMA shadow of trainable parameters."""
+    """EMA shadow of trainable parameters.
+
+    ``shadow`` holds the current EMA. With ``keep_previous_ema=True``,
+    ``previous_ema`` preserves the EMA from before the most recent ``update()``
+    for the async trainer's prefetched-batch reference. At initialization and
+    checkpoint restore, both snapshots start from the same weights.
+    """
 
     def __init__(
         self,
@@ -25,7 +31,7 @@ class EmaShadow:
         uprate: float = 0.001,
         uphold: float = 0.5,
         flat_steps: int = 0,
-        keep_lagged: bool = False,
+        keep_previous_ema: bool = False,
     ) -> None:
         self.decay = float(decay)
         self.uprate = float(uprate)
@@ -38,7 +44,7 @@ class EmaShadow:
         if not self.params:
             raise ValueError("EmaShadow: model has no trainable parameters")
         self.shadow = [_local(p.detach()).clone() for p in self.params]
-        self.lagged = [sh.clone() for sh in self.shadow] if keep_lagged else None
+        self.previous_ema = [sh.clone() for sh in self.shadow] if keep_previous_ema else None
 
     def decay_at(self, t: int) -> float:
         if t <= self.flat_steps:
@@ -52,9 +58,9 @@ class EmaShadow:
             raise RuntimeError("EmaShadow.update called while swapped in")
         self.step += 1
         delta = self.decay_at(self.step)
-        if self.lagged is not None:
-            for lg, sh in zip(self.lagged, self.shadow, strict=True):
-                lg.copy_(sh)
+        if self.previous_ema is not None:
+            for previous_ema, current_ema in zip(self.previous_ema, self.shadow, strict=True):
+                previous_ema.copy_(current_ema)
         for live, sh in zip(self.params, self.shadow, strict=True):
             sh.mul_(delta).add_(_local(live.detach()).to(sh.device), alpha=1.0 - delta)
         return delta
@@ -83,14 +89,14 @@ class EmaShadow:
             sh.copy_(_local(restored))
         self.step = int(state_dict["step"])
         # Resume starts a fresh pipeline: its first two batches use the restored EMA.
-        if self.lagged is not None:
-            for lg, sh in zip(self.lagged, self.shadow, strict=True):
-                lg.copy_(sh)
+        if self.previous_ema is not None:
+            for previous_ema, current_ema in zip(self.previous_ema, self.shadow, strict=True):
+                previous_ema.copy_(current_ema)
 
     @contextmanager
-    def swap_in(self, lagged: bool = False):
-        """Temporarily expose EMA weights (or the pre-update EMA snapshot) as the live parameters."""
-        buffers = self.lagged if lagged else self.shadow
+    def swap_in(self, use_previous_ema: bool = False):
+        """Temporarily use current EMA weights, or the snapshot before the last update."""
+        buffers = self.previous_ema if use_previous_ema else self.shadow
         self._swap(buffers)
         self._swapped = True
         try:

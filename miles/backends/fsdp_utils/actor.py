@@ -222,7 +222,8 @@ class FSDPTrainRayActor(TrainRayActor):
                 uprate=self.args.ema_decay_ramp,
                 uphold=self.args.ema_decay_max,
                 flat_steps=self.args.ema_decay_flat_steps,
-                keep_lagged=(
+                # Async prefetch uses the EMA from before the concurrent training update.
+                keep_previous_ema=(
                     getattr(self.args, "train_async", False)
                     and self.args.ref_mode == "ema"
                     and self.args.ema_rollout_policy == "ema"
@@ -316,6 +317,7 @@ class FSDPTrainRayActor(TrainRayActor):
                 ray.get(self.rollout_manager.clear_num_new_engines.remote())
 
         ema_shadow = self.ema_shadow
+        # Publish the current EMA; the previous EMA is only a training reference.
         rollout_weight_context = (
             ema_shadow.swap_in() if ema_shadow is not None and self.args.ema_rollout_policy == "ema" else nullcontext()
         )
@@ -567,7 +569,8 @@ class FSDPTrainRayActor(TrainRayActor):
         ref_mode = self.args.ref_mode
         if ref_mode != "none":
             if ref_mode == "ema":
-                ref_ctx = self.ema_shadow.swap_in(lagged=self.ema_shadow.lagged is not None)
+                # Match the EMA that generated the prefetched batch in async mode.
+                ref_ctx = self.ema_shadow.swap_in(use_previous_ema=self.ema_shadow.previous_ema is not None)
             else:
                 ref_ctx = prepared.model.disable_adapter()
             with torch.no_grad(), ref_ctx:

@@ -64,7 +64,7 @@ class TrainerProbe:
         )
         self.parallel_state = SimpleNamespace(get_mesh=lambda name: SimpleNamespace(get_local_rank=lambda: 0))
         self.param = torch.nn.Parameter(torch.zeros(1))
-        self.ema_shadow = EmaShadow([self.param], decay=0.5, flat_steps=100, keep_lagged=True)
+        self.ema_shadow = EmaShadow([self.param], decay=0.5, flat_steps=100, keep_previous_ema=True)
         if restored is not None:
             with torch.no_grad():
                 self.param.copy_(restored["param"])
@@ -84,7 +84,7 @@ class TrainerProbe:
 
     def _train_core(self, rollout_id, rollout_data):
         start = time.monotonic()
-        with self.ema_shadow.swap_in(lagged=True):
+        with self.ema_shadow.swap_in(use_previous_ema=True):
             reference = self.param.item()
         assert rollout_data["rollout_id"] == rollout_id
         assert reference == rollout_data["weight"]

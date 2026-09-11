@@ -13,8 +13,8 @@ GPU. --reward pickscore switches to the aesthetic direction on one extra GPU.
 Smoke mode shrinks the batch for checking the pipeline end to end without a real run.
 
 Training and rollout run on separate GPU pools (2+2) with NCCL LoRA weight sync.
-The one-step async pipeline trains each prefetched batch against its lagged EMA
-reference. Smoke mode runs three rollouts to cover the first updated rollout batch.
+The one-step async pipeline uses the previous EMA as the reference for each
+prefetched batch. Smoke mode runs three rollouts to cover the first updated rollout batch.
 
 Usage:
     python3 scripts/run_diffusion_nft_krea2_async.py
