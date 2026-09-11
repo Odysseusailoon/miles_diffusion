@@ -112,7 +112,7 @@ def execute(args: ScriptArgs, data_dir: str) -> None:
     optimizer_args = "--lr 1e-5 --adam-beta2 0.999 --weight-decay 1e-4 "
 
     reward_placement = (
-        "--colocate-reward --pickscore-num-workers 4 "
+        "--pickscore-reward-colocate --pickscore-num-workers 4 "
         if args.four_gpu_ci
         else "--pickscore-num-workers 4 --pickscore-num-gpus-per-worker 0.25 "
     )
@@ -152,6 +152,7 @@ def execute(args: ScriptArgs, data_dir: str) -> None:
             "--rollout-num-gpus-per-engine 2 "
             "--rollout-parser-num-workers 16 "
             "--dp-replicate-size 1 "
+            "--sglang-text-encoder-cpu-offload "
         )
         if args.four_gpu_ci
         else (

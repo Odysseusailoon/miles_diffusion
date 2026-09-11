@@ -13,7 +13,7 @@ GPU. --reward pickscore switches to the aesthetic direction on one extra GPU.
 Smoke mode shrinks the batch for checking the pipeline end to end without a real run.
 
 --train-async switches to one-step async training (train_diffusion_async.py): train and
-rollout run on separate GPU pools (2+2) with CPU-staged LoRA weight sync, so the trained
+rollout run on separate GPU pools (2+2) with NCCL LoRA weight sync, so the trained
 batch is one weight version stale.
 
 Usage:
