@@ -1,4 +1,4 @@
-"""Krea-2-Raw DiffusionNFT training (OCR by default, PickScore via --reward).
+"""Async Krea-2-Raw DiffusionNFT training (OCR by default, PickScore via --reward).
 
 Same NFT shape as run_diffusion_nft_sd3_pickscore.py: EMA reference (--ref-mode ema),
 rollout under pi_old (--ema-rollout-policy ema), deterministic ODE rollout
@@ -12,10 +12,14 @@ GPU. --reward pickscore switches to the aesthetic direction on one extra GPU.
 
 Smoke mode shrinks the batch for checking the pipeline end to end without a real run.
 
+Training and rollout run on separate GPU pools (2+2) with NCCL LoRA weight sync.
+The one-step async pipeline trains each prefetched batch against its lagged EMA
+reference. Smoke mode runs three rollouts to cover the first updated rollout batch.
+
 Usage:
-    python3 scripts/run_diffusion_nft_krea2.py
-    python3 scripts/run_diffusion_nft_krea2.py --reward pickscore
-    MILES_SCRIPT_SMOKE=1 python3 scripts/run_diffusion_nft_krea2.py
+    python3 scripts/run_diffusion_nft_krea2_async.py
+    python3 scripts/run_diffusion_nft_krea2_async.py --reward pickscore
+    MILES_SCRIPT_SMOKE=1 python3 scripts/run_diffusion_nft_krea2_async.py
 """
 
 import os
@@ -48,7 +52,7 @@ def _subset(args: ScriptArgs) -> str:
 
 
 def _num_gpus(args: ScriptArgs) -> int:
-    return 2 if _use_ocr(args) else 3
+    return 4 if _use_ocr(args) else 5
 
 
 def prepare(args: ScriptArgs) -> str:
@@ -57,8 +61,8 @@ def prepare(args: ScriptArgs) -> str:
 
 
 def execute(args: ScriptArgs, data_dir: str) -> None:
-    run_name = f"diffusion_nft_krea2_{args.reward}_{U.create_run_id()}"
-    num_rollout = args.num_rollout or (1 if args.smoke else 100)
+    run_name = f"diffusion_nft_krea2_{args.reward}_async_{U.create_run_id()}"
+    num_rollout = args.num_rollout or (3 if args.smoke else 100)
 
     ckpt_args = f"--hf-checkpoint {MODEL} --save {args.output_dir}/{run_name}/ckpt --save-interval 20 "
 
@@ -106,7 +110,7 @@ def execute(args: ScriptArgs, data_dir: str) -> None:
 
     optimizer_args = "--lr 3e-4 --adam-beta2 0.999 --weight-decay 1e-4 --clip-grad 1.0 "
 
-    lora_args = "--use-lora --lora-ipc-weight-sync --lora-rank 32 --lora-alpha 64 --lora-init-weights gaussian "
+    lora_args = "--use-lora --lora-rank 32 --lora-alpha 64 --lora-init-weights gaussian "
 
     reward_args = (
         "--rm-type ocr "
@@ -142,7 +146,6 @@ def execute(args: ScriptArgs, data_dir: str) -> None:
         "--rollout-num-gpus 2 "
         "--rollout-num-gpus-per-engine 1 "
         f"--num-gpus-per-node {_num_gpus(args)} "
-        "--colocate "
         "--deterministic-mode "
     )
 
@@ -153,6 +156,7 @@ def execute(args: ScriptArgs, data_dir: str) -> None:
             f"{train_backend_args} {perf_args} {misc_args} {args.extra_args}"
         ),
         num_gpus_per_node=_num_gpus(args),
+        train_script="train_diffusion_async.py",
         config=args,
         extra_env_vars={
             "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True",
