@@ -12,7 +12,7 @@ GPU. --reward pickscore switches to the aesthetic direction on one extra GPU.
 
 Smoke mode shrinks the batch for checking the pipeline end to end without a real run.
 
-Training and rollout run on separate GPU pools (2+2) with NCCL LoRA weight sync.
+Full OCR uses 6 training + 2 rollout H200 GPUs with NCCL LoRA sync; smoke uses 2+2.
 The one-step async pipeline uses the previous EMA as the reference for each
 prefetched batch. Smoke mode runs three rollouts to cover the first updated rollout batch.
 
@@ -52,7 +52,7 @@ def _subset(args: ScriptArgs) -> str:
 
 
 def _num_gpus(args: ScriptArgs) -> int:
-    return 4 if _use_ocr(args) else 5
+    return 4 if args.smoke else (8 if _use_ocr(args) else 5)
 
 
 def prepare(args: ScriptArgs) -> str:
@@ -63,6 +63,7 @@ def prepare(args: ScriptArgs) -> str:
 def execute(args: ScriptArgs, data_dir: str) -> None:
     run_name = f"diffusion_nft_krea2_{args.reward}_async_{U.create_run_id()}"
     num_rollout = args.num_rollout or (3 if args.smoke else 100)
+    full_ocr = _use_ocr(args) and not args.smoke
 
     ckpt_args = f"--hf-checkpoint {MODEL} --save {args.output_dir}/{run_name}/ckpt --save-interval 20 "
 
@@ -83,12 +84,13 @@ def execute(args: ScriptArgs, data_dir: str) -> None:
     ) + (
         "--rollout-batch-size 2 --n-samples-per-prompt 2 "
         if args.smoke
-        else "--rollout-batch-size 8 --n-samples-per-prompt 8 "
+        else f"--rollout-batch-size {6 if full_ocr else 8} --n-samples-per-prompt 8 "
     )
 
-    eval_args = "--diffusion-eval-num-steps 52 --skip-eval-before-train " + (
-        "" if args.smoke else f"--eval-prompt-data {args.reward}_test {data_dir}/test.jsonl --eval-interval 30 "
-    )
+    eval_args = "--diffusion-eval-num-steps 52 --skip-eval-before-train "
+    if not args.smoke:
+        eval_args += f"--eval-prompt-data {args.reward}_test {data_dir}/test.jsonl "
+        eval_args += f"--eval-interval {num_rollout if full_ocr else 30} "
 
     grpo_args = (
         "--loss-type nft "
@@ -139,10 +141,13 @@ def execute(args: ScriptArgs, data_dir: str) -> None:
 
     train_backend_args = "--train-backend fsdp --diffusion-forward-dtype bf16 "
 
-    perf_args = "--gradient-checkpointing " + ("--micro-batch-size 1 " if args.smoke else "--micro-batch-size 2 ")
+    micro_batch_size = 1 if args.smoke else (4 if full_ocr else 2)
+    perf_args = f"--micro-batch-size {micro_batch_size} "
+    if not full_ocr:
+        perf_args += "--gradient-checkpointing "
 
     misc_args = (
-        "--actor-num-gpus-per-node 2 "
+        f"--actor-num-gpus-per-node {6 if full_ocr else 2} "
         "--rollout-num-gpus 2 "
         "--rollout-num-gpus-per-engine 1 "
         f"--num-gpus-per-node {_num_gpus(args)} "
@@ -159,7 +164,6 @@ def execute(args: ScriptArgs, data_dir: str) -> None:
         train_script="train_diffusion_async.py",
         config=args,
         extra_env_vars={
-            "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True",
             "HF_TOKEN": os.environ.get("HF_TOKEN", ""),
         },
     )
