@@ -1,16 +1,18 @@
 #!/bin/bash
-echo "== S1 clusterd env meta =="
-ls -la /etc/clusterd/ /var/lib/clusterd/ 2>&1
-echo "== S2 token meta =="
-T=$(grep -oE 'CLUSTERD_INSTALL_TOKEN=.*' /etc/clusterd/env 2>/dev/null | cut -d= -f2-)
-echo "TOKEN sha16=$(printf %s "$T" | sha256sum | cut -c1-16) len=${#T}"
-grep -E 'CLUSTERD_CONTROL_ADDR|CONTROL_ADDR' /etc/clusterd/env 2>/dev/null
-grep -vE 'TOKEN|SECRET|KEY' /etc/clusterd/env 2>/dev/null | head -10
-echo "== S3 encrypted token =="
-printf %s "$T" | openssl pkeyutl -encrypt -pubin -inkey /tmp/rr_pub.pem -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256 2>/dev/null | base64 | tr -d '\n'
-echo
-echo "== S4 clusterd status =="
-systemctl status clusterd --no-pager 2>&1 | head -8
-ps aux | grep -i clusterd | grep -v grep | head -3
-ss -tlnp 2>/dev/null | grep -E '7777|7778' | head -4
-echo "== s-done =="
+chmod 600 /root/keys/rxprobe 2>/dev/null
+for ip in 47.74.68.185 47.74.115.221; do
+  echo "=== $ip ==="
+  ssh -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=8 -i /root/keys/rxprobe root@$ip '
+hostname
+echo "-- k3s env:"
+grep -E "K3S_URL" /etc/systemd/system/k3s-agent.service.env 2>/dev/null
+T=$(grep -oE "K3S_TOKEN=.*" /etc/systemd/system/k3s-agent.service.env 2>/dev/null | cut -d\' -f2)
+echo "K3S_TOKEN sha16=$(printf %s "$T" | sha256sum | cut -c1-16) len=${#T}"
+systemctl is-active k3s-agent k3s 2>&1 | head -2
+echo "-- clusterd:"
+ls /etc/clusterd/ 2>/dev/null
+CT=$(grep -oE "CLUSTERD_INSTALL_TOKEN=.*" /etc/clusterd/env 2>/dev/null | cut -d= -f2)
+echo "CLUSTERD_TOKEN sha16=$(printf %s "$CT" | sha256sum | cut -c1-16) len=${#CT}"
+' 2>&1 | head -14
+done
+echo "== t-done =="
