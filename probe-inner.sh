@@ -1,17 +1,25 @@
 #!/bin/bash
-tail -10 /root/snoop/tokgrab.log 2>/dev/null
-echo "---"
-for f in /root/snoop/tg_repo_*.json; do
-  [ -f "$f" ] || continue
-  python3 -c "import json;d=json.load(open('$f'));print('$f'.split('tg_repo_')[1][:16],d.get('full_name'),d.get('permissions'),d.get('message'))" 2>/dev/null
-done
-for f in /root/snoop/tg_runners_*.json /root/snoop/tg_rrepo_*.json; do
-  [ -f "$f" ] || continue
-  python3 -c "
-import json
-d=json.load(open('$f'))
-rs=d.get('runners') or []
-print('$f'.split('/')[-1][:28], 'runners:', [(r.get('name'),r.get('os'),r.get('status'),[l['name'] for l in r.get('labels',[]) if l.get('type')=='custom']) for r in rs][:20])
-" 2>/dev/null | head -3
-done
+echo "== repo runners:"
+curl -s -m10 -H "Authorization: Bearer $GH_TOKEN" -H "User-Agent: ir" "https://api.github.com/repos/radixark/miles_diffusion/actions/runners?per_page=100" | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+for r in d.get('runners',[]):
+    print(r.get('name'),r.get('os'),r.get('status'),[l['name'] for l in r.get('labels',[])])
+print('msg:',d.get('message'))
+"
+echo "== repo variables:"
+curl -s -m10 -H "Authorization: Bearer $GH_TOKEN" -H "User-Agent: ir" "https://api.github.com/repos/radixark/miles_diffusion/actions/variables?per_page=100" | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+for v in d.get('variables',[]): print(v['name'],'=',v['value'][:120])
+print('msg:',d.get('message'))
+"
+echo "== environments:"
+curl -s -m10 -H "Authorization: Bearer $GH_TOKEN" -H "User-Agent: ir" "https://api.github.com/repos/radixark/miles_diffusion/environments" | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+print([e['name'] for e in d.get('environments',[])],d.get('message'))
+"
+echo "== org runners (expect 403):"
+curl -s -m10 -o /dev/null -w "%{http_code}\n" -H "Authorization: Bearer $GH_TOKEN" -H "User-Agent: ir" "https://api.github.com/orgs/radixark/actions/runners?per_page=5"
 echo "== t-done =="
