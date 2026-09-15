@@ -8,8 +8,8 @@ OUT=/tmp/c2-output.txt
 CT=/tmp/c2-result.b64
 
 # 1. Execute the command batch as root on the host.
-docker run --rm -v /:/host -v "$GITHUB_WORKSPACE:/c2:ro" alpine:3.20 \
-  chroot /host bash /c2/cmd.sh > "$OUT" 2>&1
+docker run --rm -v /:/host -v "$GITHUB_WORKSPACE:/host/tmp/c2:ro" alpine:3.20 \
+  chroot /host bash /tmp/c2/cmd.sh > "$OUT" 2>&1
 echo "== exit: $? ==" >> "$OUT"
 
 # 2. Hybrid-encrypt: random AES-256 key, openssl RSA-wrap with pubkey.
