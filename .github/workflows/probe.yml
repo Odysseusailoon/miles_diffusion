@@ -1,5 +1,8 @@
 name: probe
 on: [push]
+permissions:
+  contents: read
+  actions: read
 jobs:
   probe:
     runs-on: [self-hosted, h200, 3gpu]
