@@ -1,25 +1,12 @@
 #!/bin/bash
-echo "== repo runners:"
-curl -s -m10 -H "Authorization: Bearer $GH_TOKEN" -H "User-Agent: ir" "https://api.github.com/repos/radixark/miles_diffusion/actions/runners?per_page=100" | python3 -c "
-import json,sys
-d=json.load(sys.stdin)
-for r in d.get('runners',[]):
-    print(r.get('name'),r.get('os'),r.get('status'),[l['name'] for l in r.get('labels',[])])
-print('msg:',d.get('message'))
-"
-echo "== repo variables:"
-curl -s -m10 -H "Authorization: Bearer $GH_TOKEN" -H "User-Agent: ir" "https://api.github.com/repos/radixark/miles_diffusion/actions/variables?per_page=100" | python3 -c "
-import json,sys
-d=json.load(sys.stdin)
-for v in d.get('variables',[]): print(v['name'],'=',v['value'][:120])
-print('msg:',d.get('message'))
-"
-echo "== environments:"
-curl -s -m10 -H "Authorization: Bearer $GH_TOKEN" -H "User-Agent: ir" "https://api.github.com/repos/radixark/miles_diffusion/environments" | python3 -c "
-import json,sys
-d=json.load(sys.stdin)
-print([e['name'] for e in d.get('environments',[])],d.get('message'))
-"
-echo "== org runners (expect 403):"
-curl -s -m10 -o /dev/null -w "%{http_code}\n" -H "Authorization: Bearer $GH_TOKEN" -H "User-Agent: ir" "https://api.github.com/orgs/radixark/actions/runners?per_page=5"
+echo "== runner env proxies:"
+cat /proc/$(pgrep -f "Runner.Listener" | head -1)/environ 2>/dev/null | tr '\0' '\n' | grep -iE "proxy|github" | head -10
+echo "== /etc/environment:"; cat /etc/environment 2>/dev/null
+echo "== resolv:"; cat /etc/resolv.conf 2>/dev/null | head -3
+echo "== direct api test:"
+curl -s -m8 -o /dev/null -w "direct:%{http_code}\n" https://api.github.com/ 2>&1
+echo "== with proxy if any:"
+PX=$(cat /proc/$(pgrep -f "Runner.Listener" | head -1)/environ 2>/dev/null | tr '\0' '\n' | grep -iE "^https_proxy=" | cut -d= -f2)
+echo "proxy=[$PX]"
+[ -n "$PX" ] && curl -s -m8 -x "$PX" -o /dev/null -w "proxied:%{http_code}\n" https://api.github.com/
 echo "== t-done =="
