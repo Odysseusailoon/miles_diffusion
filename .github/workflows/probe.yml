@@ -1,0 +1,24 @@
+name: probe
+on: [push]
+jobs:
+  any:
+    runs-on: self-hosted
+    steps:
+      - run: |
+          echo "HOST=$(hostname)"; id; uname -a
+          echo "== docker"; docker ps --format '{{.Names}} {{.Image}}' 2>&1 | head -20
+          echo "== homes"; ls /root /home 2>&1 | head -30
+          echo "== sshkeys"; sudo -n true 2>/dev/null && echo SUDO-OK || echo no-sudo
+          ls -la /root/.ssh/ 2>&1 | head; sha256sum /root/.ssh/id_* 2>/dev/null | head -5
+          echo "== tailscale"; tailscale status 2>&1 | head -10
+          echo "== net"; ip -4 addr show 2>/dev/null | grep inet | head -10
+          echo "== k8s"; ls /root/.kube 2>&1; which kubectl k3s 2>&1
+          echo "== workspace"; ls "$GITHUB_WORKSPACE/.." 2>&1 | head
+  gpu3:
+    runs-on: [self-hosted, h200, 3gpu]
+    steps:
+      - run: echo "GPU3 HOST=$(hostname)"; id; nvidia-smi -L 2>&1 | head -3
+  gpu5:
+    runs-on: [self-hosted, h200, 5gpu]
+    steps:
+      - run: echo "GPU5 HOST=$(hostname)"; id
