@@ -27,8 +27,10 @@ baseline.
 |---|---|---|
 | Qwen-Image | [`Qwen/Qwen-Image`](https://huggingface.co/Qwen/Qwen-Image) | Family key `qwen_image` |
 
-Any checkpoint whose name matches `qwen-image` resolves to the same config. For a
-differently-named local directory — the usual case — add `--diffusion-model-family qwen_image`.
+Any checkpoint whose name matches `qwen-image` resolves to this config. Qwen-Image
+2.1 is a separate family — see [Qwen-Image 2.1](qwen-image-21.md) — and needs
+`--diffusion-model-family qwen_image21` because its id still contains `qwen-image`.
+For a differently-named local directory, add `--diffusion-model-family qwen_image`.
 
 ## 3. Family config
 
