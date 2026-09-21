@@ -1,17 +1,11 @@
-"""Qwen-Image 2.1 PickScore Flow-GRPO, 1-GPU v2 after the 8×8 long run collapsed.
+"""Qwen-Image 2.1 PickScore Flow-GRPO, 1-GPU recipe.
 
-The v1 long recipe (8 prompts × 8 samples, lr 3e-4, 400 rollouts) started at
-PickScore ~0.84, fell to ~0.75 by rollout 100–149, and only recovered to ~0.81.
-clipfrac rose to 0.20–0.25 in the trough. 2.1 is already strong at CFG 1.0;
-the 1.0 5-GPU lr and a 64-sample group were too aggressive / too noisy.
+CFG 1.0, SDE 3–5, LoRA 64/128, 512² / 10 steps.
 
-v2 keeps the 2.1 constraints (CFG 1.0, SDE 3–5, LoRA 64/128, 512² / 10 steps)
-and changes the learning dynamics:
-
-  16 prompts × 16 samples = 256 / rollout (flow_grpo group size, 4× data)
-  lr 1e-4 (cosmos / wan / h3 image-adjacent pacing)
-  200 rollouts default — more samples per step, fewer noisy updates
-  micro-batch 4, PickScore batch 8, sglang concurrency 4 (H200 had ~40 GB peak)
+  16 prompts × 16 samples = 256 / rollout
+  lr 1e-4
+  200 rollouts default
+  micro-batch 4, PickScore batch 8, sglang concurrency 4
 
 Usage:
     python3 scripts/run_diffusion_grpo_qwenimage21_pickscore_1gpu_v2.py \\
