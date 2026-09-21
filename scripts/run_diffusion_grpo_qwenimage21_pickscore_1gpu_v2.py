@@ -27,9 +27,7 @@ DATASET_SUBSET = "flowgrpo_pickscore"
 WANDB_PROJECT = "miles-diffusion-grpo"
 SGLANG_21_PYTHON = os.environ.get("SGLANG_21_PYTHON", "")
 DIFFUSERS_21_SRC = os.environ.get("DIFFUSERS_21_SRC", "")
-PICKSCORE_PROCESSOR = os.environ.get(
-    "PICKSCORE_PROCESSOR_PATH", "laion/CLIP-ViT-H-14-laion2B-s32B-b79K"
-)
+PICKSCORE_PROCESSOR = os.environ.get("PICKSCORE_PROCESSOR_PATH", "laion/CLIP-ViT-H-14-laion2B-s32B-b79K")
 PICKSCORE_MODEL = os.environ.get("PICKSCORE_MODEL_PATH", "yuvalkirstain/PickScore_v1")
 
 
@@ -145,9 +143,7 @@ def execute(args: ScriptArgs, data_dir: str) -> None:
         "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True",
         "WANDB_MODE": "offline",
     }
-    pythonpath = ":".join(
-        p for p in (SGLANG_21_PYTHON, DIFFUSERS_21_SRC, os.environ.get("PYTHONPATH", "")) if p
-    )
+    pythonpath = ":".join(p for p in (SGLANG_21_PYTHON, DIFFUSERS_21_SRC, os.environ.get("PYTHONPATH", "")) if p)
     if pythonpath:
         extra_env_vars["PYTHONPATH"] = pythonpath
     if os.environ.get("HF_HOME"):

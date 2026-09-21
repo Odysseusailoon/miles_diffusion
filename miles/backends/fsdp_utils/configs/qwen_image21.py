@@ -34,7 +34,7 @@ def _rebuild_qwen21_rope_on_cuda(model) -> None:
             continue
         theta = float(submod.theta)
 
-        def _params(index: torch.Tensor, dim: int) -> torch.Tensor:
+        def _params(index: torch.Tensor, dim: int, theta: float = theta) -> torch.Tensor:
             inv = 1.0 / torch.pow(
                 theta,
                 torch.arange(0, dim, 2, device=device).to(torch.float32).div(dim),
@@ -87,7 +87,9 @@ class QwenImage21TrainPipelineConfig(TrainPipelineConfig):
 
     def _latent_hw(self) -> tuple[int, int]:
         if self.height % _VAE_SCALE or self.width % _VAE_SCALE:
-            raise ValueError(f"Qwen-Image 2.1 height/width must be divisible by {_VAE_SCALE}, got {self.height}x{self.width}")
+            raise ValueError(
+                f"Qwen-Image 2.1 height/width must be divisible by {_VAE_SCALE}, got {self.height}x{self.width}"
+            )
         return self.height // _VAE_SCALE, self.width // _VAE_SCALE
 
     def _target_slots(self) -> int:
