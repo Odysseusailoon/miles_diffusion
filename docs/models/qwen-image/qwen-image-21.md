@@ -1,6 +1,6 @@
 ---
 title: Qwen-Image 2.1
-description: Flow-GRPO with PickScore on Qwen-Image 2.1 — 1-GPU alignment / smoke recipe.
+description: Flow-GRPO with PickScore on Qwen-Image 2.1 — 1-GPU recipe.
 ---
 ## 1. Model introduction
 
@@ -41,8 +41,8 @@ Registered in `miles/backends/fsdp_utils/configs/qwen_image21.py`:
 
 ## 4. Launch
 
-Canonical recipe: `scripts/run_diffusion_grpo_qwenimage21_pickscore_1gpu.py` — 1
-colocated GPU, train + sglang + PickScore, 512×512.
+Canonical recipe: `scripts/run_diffusion_grpo_qwenimage21_pickscore_1gpu_v2.py` — 1
+colocated GPU, train + sglang + PickScore, 512×512, 16×16 group, lr 1e-4.
 
 The engine must be the sglang 2.1 branch and diffusers must export
 `QwenImage21Transformer2DModel`. If those checkouts are not already on
@@ -54,20 +54,20 @@ real ckpt generate passed; real 1-GPU GRPO [○ NV on 32GB — OOM](../../user-g
 
 ```bash
 # alignment diagnostic: freeze weights so log_prob_mean_abs_diff is train-vs-rollout
-python3 scripts/run_diffusion_grpo_qwenimage21_pickscore_1gpu.py \
+python3 scripts/run_diffusion_grpo_qwenimage21_pickscore_1gpu_v2.py \
   --num-rollout 2 --eval-interval 0 --extra-args "--debug-skip-optimizer-step"
 
 # local / dummy checkpoint + local prompts
-python3 scripts/run_diffusion_grpo_qwenimage21_pickscore_1gpu.py \
+python3 scripts/run_diffusion_grpo_qwenimage21_pickscore_1gpu_v2.py \
   --hf-checkpoint /path/to/qwen-image-2.1 \
   --prompt-data /path/to/flowgrpo_pickscore
 ```
 
 ## 5. Recipe notes
 
-- Official sampling is 40 steps / CFG 1. This smoke recipe uses 10 steps and the
+- Official sampling is 40 steps / CFG 1. This recipe uses 10 steps and the
   same SDE window as Qwen-Image 1.0 (`--diffusion-sde-window-range 3,5`, 2 SDE
-  steps) so a log_prob_diff check finishes on one 32 GB card.
+  steps). Default is 16 prompts × 16 samples, lr 1e-4, 200 rollouts.
 - `--rollout-patch-group qwen_image21` wipes the engine's prefix KV cache
   every step and disables the 2.1 fused kernels so every SDE step reruns the
   full joint sequence, matching the trainer.
