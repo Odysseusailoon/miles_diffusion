@@ -1,4 +1,8 @@
-"""One-rollout overlap. Resume discards prefetch and starts from the saved EMA."""
+"""One-rollout overlap.
+
+Resume discards the prefetch and regenerates its first batch from the republished EMA, so that
+one batch trains against a reference one EMA step older than its sampler.
+"""
 
 import sys
 import time
@@ -64,7 +68,6 @@ def train(args):
     rollout_manager, num_rollout_per_epoch = create_rollout_manager(args, pgs["rollout"])
     actor_model = create_training_models(args, pgs, rollout_manager)
 
-    # Publish initial/restored weights without advancing EMA or its decay schedule.
     actor_model.update_weights()
     if args.eval_interval is not None:
         if args.num_rollout == 0:

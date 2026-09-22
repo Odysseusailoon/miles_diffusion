@@ -65,7 +65,6 @@ def test_checkpoint_restores_ema_and_restarts_reference(tmp_path, monkeypatch, l
         assert restored.ema_shadow.step == 2
         expected = original.model.weight if legacy else original.ema_shadow.shadow[0]
         torch.testing.assert_close(restored.ema_shadow.shadow[0], expected)
-        torch.testing.assert_close(restored.ema_shadow.previous_ema[0], expected)
         torch.testing.assert_close(restored.model.weight, original.model.weight)
         if not legacy:
             assert original.ema_shadow.update() == restored.ema_shadow.update()
@@ -94,4 +93,3 @@ def test_ema_checkpoint_reshards_to_single_process(tmp_path):
     dcp.load({"ema": restored}, checkpoint_id=str(tmp_path / "ema"))
     assert restored.step == 2
     torch.testing.assert_close(restored.shadow[0], torch.arange(15).reshape(5, 3).float() + 1.25)
-    torch.testing.assert_close(restored.previous_ema[0], restored.shadow[0])

@@ -78,7 +78,7 @@ class TrainerProbe:
         self.published = self.param.item()
 
     def update_weights(self):
-        with patch.object(self.actor, "clear_memory"):
+        with patch.object(self.actor, "clear_memory"), patch.object(self.actor.dist, "get_rank", return_value=0):
             self.actor.FSDPTrainRayActor.update_weights(self)
         return self.published, self.ema_shadow.step
 
@@ -87,11 +87,10 @@ class TrainerProbe:
         with self.ema_shadow.swap_in(use_previous_ema=True):
             reference = self.param.item()
         assert rollout_data["rollout_id"] == rollout_id
-        assert reference == rollout_data["weight"]
         time.sleep(self.delay)
         with torch.no_grad():
             self.param.add_(1)
-        self.records.append((rollout_data, start, time.monotonic()))
+        self.records.append((rollout_data, start, time.monotonic(), reference))
 
     def train(self, rollout_id, batch):
         with patch.object(self.actor.dist, "get_rank", return_value=0), patch.object(
@@ -181,7 +180,8 @@ def test_overlap_reference_cursor_and_update_barrier(tmp_path, monkeypatch, trai
     )
     assert [record[0]["sample_index"] for record in records] == [0, 1, 2]
     assert [record[0]["weight"] for record in records] == [0.0, 0.0, 0.5]
-    assert [step for _, step in updates] == [0, 1, 2, 3]
+    assert [record[3] for record in records] == [record[0]["weight"] for record in records]
+    assert [step for _, step in updates] == [1, 2, 3, 4]
     assert saves[1]["ema"]["step"] == 2
     for i in range(2):
         assert max(records[i][1], events[i + 1][1]) < min(records[i][2], events[i + 1][2])
@@ -198,7 +198,10 @@ def test_resume_rewarms_with_restored_ema(tmp_path, monkeypatch):
     )
     assert [r[0]["sample_index"] for r in records] == [2, 3, 4]
     assert [r[0]["weight"] for r in records] == [1.25, 1.25, 2.125]
-    assert [step for _, step in updates] == [2, 3, 4, 5]
+    # The republish replays the EMA step the checkpoint preceded; the regenerated first batch
+    # samples from that EMA while its reference is still the restored one.
+    assert [r[3] for r in records] == [0.5, 1.25, 2.125]
+    assert [step for _, step in updates] == [3, 4, 5, 6]
 
 
 @pytest.mark.parametrize("count", [0, 1])

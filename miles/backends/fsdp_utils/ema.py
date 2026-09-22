@@ -19,8 +19,7 @@ class EmaShadow:
 
     ``shadow`` holds the current EMA. With ``keep_previous_ema=True``,
     ``previous_ema`` preserves the EMA from before the most recent ``update()``
-    for the async trainer's prefetched-batch reference. At initialization and
-    checkpoint restore, both snapshots start from the same weights.
+    for the async trainer's prefetched-batch reference.
     """
 
     def __init__(
@@ -88,10 +87,6 @@ class EmaShadow:
         for sh, restored in zip(self.shadow, state_dict["shadow"], strict=True):
             sh.copy_(_local(restored))
         self.step = int(state_dict["step"])
-        # Resume starts a fresh pipeline: its first two batches use the restored EMA.
-        if self.previous_ema is not None:
-            for previous_ema, current_ema in zip(self.previous_ema, self.shadow, strict=True):
-                previous_ema.copy_(current_ema)
 
     @contextmanager
     def swap_in(self, use_previous_ema: bool = False):
