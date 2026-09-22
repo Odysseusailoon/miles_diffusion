@@ -234,7 +234,7 @@ class SGLangDiffusionEngine(RayActor):
     def update_weights_from_tensor(
         self,
         serialized_named_tensors: list[str],
-        payload_gpu_uuids: list[str] | None,
+        payload_gpu_uuids: list[str],
         load_format: str | None = None,
         target_modules: list[str] | None = None,
         weight_version: str | None = None,

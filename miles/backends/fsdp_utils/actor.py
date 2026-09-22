@@ -224,9 +224,7 @@ class FSDPTrainRayActor(TrainRayActor):
                 flat_steps=self.args.ema_decay_flat_steps,
                 # Async prefetch uses the EMA from before the concurrent training update.
                 keep_previous_ema=(
-                    getattr(self.args, "train_async", False)
-                    and self.args.ref_mode == "ema"
-                    and self.args.ema_rollout_policy == "ema"
+                    self.args.train_async and self.args.ref_mode == "ema" and self.args.ema_rollout_policy == "ema"
                 ),
             )
 
