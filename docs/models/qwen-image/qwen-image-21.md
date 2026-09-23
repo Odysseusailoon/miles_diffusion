@@ -23,8 +23,9 @@ Day-0 references:
 |---|---|---|
 | Qwen-Image 2.1 | [`Qwen/Qwen-Image-2.1`](https://huggingface.co/Qwen/Qwen-Image-2.1) | Family key `qwen_image21` |
 
-Pass `--diffusion-model-family qwen_image21`. A bare `qwen-image` substring still
-maps to the 1.0 family, including `Qwen/Qwen-Image-2.1`.
+A name containing `qwen-image-2.1`, `qwen-image-21`, `qwenimage21`, or
+`qwen_image21` resolves to this family. Matching keeps the longest pattern, so
+`Qwen/Qwen-Image-2.1` resolves to `qwen_image21`.
 
 ## 3. Family config
 
