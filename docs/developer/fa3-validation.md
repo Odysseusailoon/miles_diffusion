@@ -89,6 +89,20 @@ kernel spy. They establish argument routing and graph preservation, not CUDA
 kernel behavior. They also cover the actor's enable-before-set order, active
 backend selection, registry isolation, mode-off behavior and detached LSE.
 
+The full normal CPU suite was also run at `b0ff911` on macOS arm64 with Python
+3.12.12: **317 passed, 0 skipped, 20 warnings in 98.98 seconds**. Both project and
+CPU-CI requirement files were installed without pin overrides, with real SGLang
+at `859a278eb882dddbc4ccab1d0a3697da04a66f28` and the repository's CPU stubs.
+No tests or package initializers were bypassed. Source imports used `PYTHONPATH`
+because the existing Miles editable wheel emits an invalid macOS platform tag;
+this is a local CPU result, not a hosted Linux or GPU CI result.
+
+```bash
+PYTHONPATH="$PWD" python -m pytest tests/fast -x -q
+```
+
+All configured pre-commit hooks and `train_diffusion.py --help` also passed.
+
 ## GPU gates: stop at the first failure
 
 First run one GPU, using a small input. `timeout` below is GNU coreutils on Linux.
