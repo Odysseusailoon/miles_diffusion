@@ -7,8 +7,12 @@ local attention call; Diffusers context parallelism and ring are not supported.
 """
 
 import inspect
+from typing import TYPE_CHECKING
 
 import torch
+
+if TYPE_CHECKING:
+    from diffusers.models._modeling_parallel import ParallelConfig
 
 
 def install_diffusers_fa3_attention(*, deterministic: bool = False) -> None:
@@ -55,8 +59,8 @@ def install_diffusers_fa3_attention(*, deterministic: bool = False) -> None:
         return_lse: bool = False,
         deterministic: bool = False,
         num_splits: int = 1,
-        _parallel_config=None,
-    ):
+        _parallel_config: "ParallelConfig | None" = None,
+    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
         if attn_mask is not None:
             raise ValueError("Miles _flash_3 does not support attn_mask")
         if dropout_p != 0.0:
