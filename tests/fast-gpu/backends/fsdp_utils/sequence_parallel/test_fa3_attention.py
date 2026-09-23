@@ -14,6 +14,7 @@ import torch
 
 
 _WORKER = Path(__file__).with_name("_fa3_attention_worker.py")
+_REPEATS = 20
 
 
 def _run_worker(command, *, env, timeout):
@@ -42,7 +43,7 @@ def test_fa3_dispatch_ulysses_forward_backward_and_repeatability(world_size, dty
     if not torch.cuda.is_available():
         if os.environ.get("CI"):
             pytest.fail("CUDA CI has no working CUDA device; this is not a passing FA3 regression")
-        pytest.skip("CUDA unavailable; FA3 GPU regression requires Hopper")
+        pytest.skip("CUDA unavailable; FA3 GPU regression requires a GPU supported by the installed FA3 build")
     assert (
         torch.cuda.device_count() >= world_size
     ), f"This case needs {world_size} visible GPUs; select a smaller case explicitly instead of skipping coverage"
@@ -60,8 +61,10 @@ def test_fa3_dispatch_ulysses_forward_backward_and_repeatability(world_size, dty
         str(_WORKER),
         "--dtype",
         dtype,
+        "--seq-len",
+        "1024",
         "--repeats",
-        "3",
+        str(_REPEATS),
         "--output-json",
         str(evidence),
     ]
@@ -69,8 +72,10 @@ def test_fa3_dispatch_ulysses_forward_backward_and_repeatability(world_size, dty
     report = json.loads(evidence.read_text())
     assert report["status"] == "passed"
     assert report["world_size"] == world_size
-    assert len(report["checks"]) == 23  # 8 reference, 8 repeated, 3 projection, 4 mode-off comparisons
-    assert [call["deterministic"] for call in report["kernel_calls_per_rank"]] == [True] * 4 + [False]
+    # 8 reference + 4*(repeats-1) repeated + 3 projection + 4 mode-off comparisons.
+    assert len(report["checks"]) == 4 * _REPEATS + 11
+    assert len(report["kernel_calls_per_rank"]) == _REPEATS + 2
+    assert [call["deterministic"] for call in report["kernel_calls_per_rank"]] == [True] * (_REPEATS + 1) + [False]
 
 
 if __name__ == "__main__":

@@ -34,7 +34,9 @@ def _arguments():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repeats", type=int, default=3)
     parser.add_argument("--batch-size", type=int, default=2)
-    parser.add_argument("--seq-len", type=int, default=128)
+    # S=128 may miss sequence-dependent backward nondeterminism; keep that
+    # shape available explicitly as a smoke test, not the default regression.
+    parser.add_argument("--seq-len", type=int, default=1024)
     parser.add_argument("--heads", type=int, default=8)
     parser.add_argument("--head-dim", type=int, default=64)
     parser.add_argument("--dtype", choices=("bfloat16", "float16"), default="bfloat16")
@@ -146,8 +148,8 @@ def _run(args, report):
     torch.cuda.set_device(local_rank)
     device = torch.device("cuda", local_rank)
     capability = torch.cuda.get_device_capability(device)
-    if capability[0] != 9:
-        raise RuntimeError(f"This regression targets the Hopper FA3 build (SM90), got {capability}")
+    if capability[0] < 8:
+        raise RuntimeError(f"This regression requires an SM80+ GPU and a compatible FA3 build, got {capability}")
     if os.environ.get("CUBLAS_WORKSPACE_CONFIG") not in (":4096:8", ":16:8"):
         raise RuntimeError("Set CUBLAS_WORKSPACE_CONFIG=:4096:8 before launching torchrun")
     torch.backends.cuda.matmul.allow_tf32 = False

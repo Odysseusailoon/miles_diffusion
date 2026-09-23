@@ -36,7 +36,10 @@ Diffusers' `[B,S,H]` layout and is detached: upstream FA3 does not differentiate
 ## Environment and preflight
 
 Use the project's complete GPU image, with its matching PyTorch/CUDA/FA3 wheel.
-The worker requires Hopper SM90 (H100/H200), not an arbitrary CUDA device.
+The worker requires SM80 or newer and actual support in the installed FA3 build.
+The Miles cu129 wheel's associated source includes SM80 forward/backward; do not
+reject A800 solely because it is not Hopper. Successful SM80 execution does not
+establish deterministic backward or validate the separate Hopper implementation.
 `fsdp_utils` currently imports the train actor eagerly, so a minimal installation
 of only Torch, Diffusers and FA3 is insufficient for normal Miles imports.
 Do not rebuild the full image or download a model as the first experiment.
@@ -63,7 +66,7 @@ print('torch/cuda:', torch.__version__, torch.version.cuda)
 print('kernel file:', fa3.__file__)
 print('kernel signature:', inspect.signature(fa3.flash_attn_func))
 assert callable(ad.flash_attn_3_func), 'Diffusers did not load FA3'
-assert torch.cuda.get_device_capability()[0] == 9, 'Expected Hopper'
+assert torch.cuda.get_device_capability()[0] >= 8, 'Expected SM80 or newer'
 print('Diffusers kernel:', ad.flash_attn_3_func)
 PY
 ```
@@ -99,11 +102,16 @@ export TORCH_NCCL_ASYNC_ERROR_HANDLING=1
 export PYTHONUNBUFFERED=1
 timeout --kill-after=10s 300s python -m torch.distributed.run --standalone --nnodes=1 --nproc_per_node=1 \
   tests/fast-gpu/backends/fsdp_utils/sequence_parallel/_fa3_attention_worker.py \
-  --repeats 20 --output-json artifacts/fa3/bf16-sp1.json \
+  --seq-len 128 --repeats 20 --output-json artifacts/fa3/bf16-sp1.json \
   > artifacts/fa3/bf16-sp1.log 2>&1
 ```
 
-Only after it passes, repeat with `--nproc_per_node=2`, then `4`, and distinct
+On SM80, immediately repeat the single-GPU test with `--seq-len 1024` and
+`--repeats 30`. Multiple key tiles must contribute to dQ; a short sequence can
+hide unordered backward accumulation. Stop and isolate upstream FA3 if exact
+repeatability fails, even when every value is numerically close.
+
+Only after these pass, repeat with `--nproc_per_node=2`, then `4`, and distinct
 `bf16-sp2` / `bf16-sp4` output filenames. Keep seed, full sequence length, batch,
 head count and head dimension unchanged. All cases compare their local shards
 against a full-sequence FA3 reference and independent FP32 math SDPA. No model or
@@ -127,7 +135,7 @@ These shapes are initial probes; add the actual target model's head dimensions
 and sequence lengths after confirming the small cases. Long-video shapes can
 make the independent math reference expensive, so increase sizes deliberately.
 
-The CI-sized grid (BF16 SP1/2/4, FP16 SP1; three repeats) is:
+The strict CI grid (BF16 SP1/2/4, FP16 SP1; S=1024 and 20 repeats) is:
 
 ```bash
 python -m pytest -q tests/fast-gpu/backends/fsdp_utils/sequence_parallel/test_fa3_attention.py
@@ -161,6 +169,54 @@ Its time is total validation runtime, not an attention throughput benchmark.
 Run the gates in a fresh process again to check restart reproducibility as needed;
 this worker checks bitwise repeats within each process, not persisted cross-run
 tensor hashes.
+
+## Observed SM80 limitation (2026-09-23)
+
+The cu129 `flash_attn_3-3.0.0b1-cp39-abi3-linux_x86_64.whl` from
+`yueming-yuan/miles-wheels`, SHA256
+`b0f4d97418aa129522cd4b4e65ce516ddf8af64815f4ce040cb38a6d94cef971`,
+executes on A800 with Torch 2.11.0+cu129 and driver 570.158.01. Its interface
+matches FlashAttention source revision `fbf24f67`.
+
+For fixed inputs B=2, S=1024, H=8, D=64, noncausal attention and
+`deterministic=True, num_splits=1`, a standalone call to the upstream public
+function failed exact dQ repeatability in all 19 comparisons against the first
+run, for both BF16 and FP16. Output, dK and dV remained bitwise equal and finite.
+Maximum observed dQ differences were 0.0009765625 (BF16) and 0.0001220703125
+(FP16). The standalone reproducer does not import Miles or Diffusers.
+
+Miles' S=128 BF16 smoke passed on SP1/2/4, including the tiny projection update.
+That is insufficient evidence of deterministic training: short sequences can
+hide multi-tile accumulation. This finding is why the strict regression uses
+S=1024. The adapter repairs dispatch and preserves autograd; it cannot impose a
+deterministic reduction order on an upstream kernel that ignores that contract.
+
+**Strict deterministic SM80 support is incomplete for this tested build.** Do
+not weaken the equality assertion or describe the PR as fully validated. A
+production deterministic guarantee requires an upstream fix/validated build or
+a targeted rejection of the unsupported deterministic-training configuration.
+This does not mean all FA3 versions fail on SM80. The SM80 result alone cannot
+establish Hopper behavior. Ring and full-model behavior remain separate scopes.
+
+The associated [SM80 backward source](https://github.com/Dao-AILab/flash-attention/blob/fbf24f67cf7f6442c5cfb2c1057f4bfc57e72d89/hopper/mainloop_bwd_sm80.hpp#L833)
+uses unordered dQ atomic additions. That is a plausible explanation for the
+measurement, not independent proof of the binary's exact build configuration.
+
+## H100 comparison (2026-09-23)
+
+The same source archive, Python 3.13.5, Torch 2.11.0+cu129, pinned Diffusers
+wheel, FA3 wheel above, seeds and explicit tensor shapes were rerun on H100
+(SM90, driver 595.91.07). Standalone BF16 and FP16 S=1024 passed all 19 repeated
+comparisons for output, dQ, dK and dV. Miles BF16 SP1/2/4 and FP16 SP1 passed at
+both S=128 and S=1024, with 20 runs each. Every Miles case completed 91 checks,
+including numerical references, bitwise repeats, a projection SGD update and
+deterministic-off backward. The four-GPU SDPA control and 48 focused CPU tests
+also passed.
+
+These runs used the real operators with only the eager actor package initializer
+bypassed. They establish the measured H100 attention behavior, not successful
+import of the complete actor, rollout/training equivalence, performance, or
+bitwise equality across GPU architectures. The A800 limitation remains.
 
 ## Remaining rollout and model gate
 
