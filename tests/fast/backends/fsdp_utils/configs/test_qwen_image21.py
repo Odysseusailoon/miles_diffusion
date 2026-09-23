@@ -5,6 +5,7 @@ register_cpu_ci(est_time=15, suite="stage-a-cpu", labels=[])
 import torch
 
 from miles.backends.fsdp_utils.configs.qwen_image21 import QwenImage21TrainPipelineConfig
+from miles.backends.fsdp_utils.configs.train_pipeline_config import TrainPipelineConfig
 from miles.utils.types import CondKwargs
 
 
@@ -51,6 +52,13 @@ class TestQwenImage21Cond:
     def test_timestep_divides_by_1000(self):
         t = torch.tensor([1000.0, 250.0])
         torch.testing.assert_close(self.cfg.process_timestep_as_input(t), t / 1000.0)
+
+    def test_no_legacy_window_pad(self):
+        # The window-wide pad exists only so Qwen-Image 1.0 stays bitwise with the old collate.
+        assert (
+            QwenImage21TrainPipelineConfig.maybe_legacy_window_pad_len
+            is TrainPipelineConfig.maybe_legacy_window_pad_len
+        )
 
 
 class _TailDiT(torch.nn.Module):

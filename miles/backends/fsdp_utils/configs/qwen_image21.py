@@ -188,18 +188,6 @@ class QwenImage21TrainPipelineConfig(TrainPipelineConfig):
             "img_shapes": [self._img_shapes()] * len(padded_encs),
         }
 
-    def maybe_legacy_window_pad_len(self, conds: list) -> int | None:
-        lens = []
-        for cond in conds:
-            if cond is None:
-                continue
-            if cond.txt_seq_lens:
-                lens.append(int(cond.txt_seq_lens[0]))
-            elif cond.encoder_hidden_states:
-                enc = cond.encoder_hidden_states[0]
-                lens.append(int(enc.shape[0] if enc.ndim == 2 else enc.shape[1]))
-        return max(lens) if lens else None
-
     def compute_noise_pred(
         self,
         *,
