@@ -20,6 +20,10 @@ class TestFamilyResolution:
         "ref,family",
         [
             ("Qwen/Qwen-Image", "qwen_image"),
+            # Longer pattern wins: "qwen-image" is a substring of these ids.
+            ("Qwen/Qwen-Image-2.1", "qwen_image21"),
+            ("/data/ckpts/qwen-image-21", "qwen_image21"),
+            ("local/qwenimage21", "qwen_image21"),
             ("Wan-AI/Wan2.2-T2V-A14B", "wan2_2"),
             ("/data/ckpts/SD3.5-Medium-Finetune", "sd3"),
             ("krea/Krea-2-Raw", "krea2"),

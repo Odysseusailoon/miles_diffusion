@@ -211,10 +211,10 @@ def get_miles_extra_args_provider(add_custom_arguments=None):
                 type=str,
                 default=None,
                 help=(
-                    "Registered family key, e.g. sd3, wan2_2, ltx, qwen_image, qwen_image21. Default: matched from "
-                    "--hf-checkpoint against each family's name patterns. Pass it when the checkpoint "
-                    "does not carry the family name, which your own local weights usually do not. Use "
-                    "--train-pipeline-config-path instead for a family that is not registered."
+                    "Registered family key, e.g. sd3, wan2_2, ltx, qwen_image, qwen_image21. Default: the longest "
+                    "name pattern in --hf-checkpoint, so Qwen-Image-2.1 resolves to qwen_image21. Pass it when "
+                    "the checkpoint does not carry the family name, which your own local weights usually do "
+                    "not. Use --train-pipeline-config-path instead for a family that is not registered."
                 ),
             )
             parser.add_argument(
