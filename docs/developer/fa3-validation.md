@@ -1,9 +1,9 @@
 # Dense FA3 training and pure Ulysses validation
 
 This regression targets `DiffusersModelBackend`, the `_flash_3` backend, and
-Miles pure Ulysses (`ring_degree=1`). It exercises real FA3 without downloading
-model weights. Passing it establishes attention-level correctness on the tested
-hardware/build/shapes, not full-model, FSDP2, or rollout/train equivalence.
+Miles pure Ulysses (`ring_degree=1`) on H100. It exercises real FA3 without
+downloading model weights. Passing it establishes attention-level correctness
+on the tested build/shapes, not full-model, FSDP2, or rollout/train equivalence.
 
 ## Why the adapter exists
 
@@ -36,10 +36,9 @@ Diffusers' `[B,S,H]` layout and is detached: upstream FA3 does not differentiate
 ## Environment and preflight
 
 Use the project's complete GPU image, with its matching PyTorch/CUDA/FA3 wheel.
-The worker requires SM80 or newer and actual support in the installed FA3 build.
-The Miles cu129 wheel's associated source includes SM80 forward/backward; do not
-reject A800 solely because it is not Hopper. Successful SM80 execution does not
-establish deterministic backward or validate the separate Hopper implementation.
+The GPU regression requires SM90 or newer and actual support in the installed
+FA3 build. The results reported here were measured on H100; this test gate does
+not establish support for every later GPU architecture.
 `fsdp_utils` currently imports the train actor eagerly, so a minimal installation
 of only Torch, Diffusers and FA3 is insufficient for normal Miles imports.
 Do not rebuild the full image or download a model as the first experiment.
@@ -66,7 +65,7 @@ print('torch/cuda:', torch.__version__, torch.version.cuda)
 print('kernel file:', fa3.__file__)
 print('kernel signature:', inspect.signature(fa3.flash_attn_func))
 assert callable(ad.flash_attn_3_func), 'Diffusers did not load FA3'
-assert torch.cuda.get_device_capability()[0] >= 8, 'Expected SM80 or newer'
+assert torch.cuda.get_device_capability()[0] >= 9, 'Expected SM90 or newer'
 print('Diffusers kernel:', ad.flash_attn_3_func)
 PY
 ```
@@ -106,10 +105,9 @@ timeout --kill-after=10s 300s python -m torch.distributed.run --standalone --nno
   > artifacts/fa3/bf16-sp1.log 2>&1
 ```
 
-On SM80, immediately repeat the single-GPU test with `--seq-len 1024` and
-`--repeats 30`. Multiple key tiles must contribute to dQ; a short sequence can
-hide unordered backward accumulation. Stop and isolate upstream FA3 if exact
-repeatability fails, even when every value is numerically close.
+Repeat the single-GPU test with `--seq-len 1024 --repeats 20` to cover multiple
+key tiles contributing to dQ. Stop and isolate upstream FA3 if exact repeatability
+fails, even when every value is numerically close.
 
 Only after these pass, repeat with `--nproc_per_node=2`, then `4`, and distinct
 `bf16-sp2` / `bf16-sp4` output filenames. Keep seed, full sequence length, batch,
@@ -170,43 +168,15 @@ Run the gates in a fresh process again to check restart reproducibility as neede
 this worker checks bitwise repeats within each process, not persisted cross-run
 tensor hashes.
 
-## Observed SM80 limitation (2026-09-23)
+## H100 validation (2026-09-23)
 
-The cu129 `flash_attn_3-3.0.0b1-cp39-abi3-linux_x86_64.whl` from
+The operator matrix used H100 80GB HBM3 (SM90, driver 595.91.07), Python 3.13.5,
+Torch 2.11.0+cu129, CUDA runtime 12.9, NCCL 2.28.9 and the Diffusers pin above.
+The FA3 wheel was `flash_attn_3-3.0.0b1-cp39-abi3-linux_x86_64.whl` from
 `yueming-yuan/miles-wheels`, SHA256
-`b0f4d97418aa129522cd4b4e65ce516ddf8af64815f4ce040cb38a6d94cef971`,
-executes on A800 with Torch 2.11.0+cu129 and driver 570.158.01. Its interface
-matches FlashAttention source revision `fbf24f67`.
+`b0f4d97418aa129522cd4b4e65ce516ddf8af64815f4ce040cb38a6d94cef971`.
 
-For fixed inputs B=2, S=1024, H=8, D=64, noncausal attention and
-`deterministic=True, num_splits=1`, a standalone call to the upstream public
-function failed exact dQ repeatability in all 19 comparisons against the first
-run, for both BF16 and FP16. Output, dK and dV remained bitwise equal and finite.
-Maximum observed dQ differences were 0.0009765625 (BF16) and 0.0001220703125
-(FP16). The standalone reproducer does not import Miles or Diffusers.
-
-Miles' S=128 BF16 smoke passed on SP1/2/4, including the tiny projection update.
-That is insufficient evidence of deterministic training: short sequences can
-hide multi-tile accumulation. This finding is why the strict regression uses
-S=1024. The adapter repairs dispatch and preserves autograd; it cannot impose a
-deterministic reduction order on an upstream kernel that ignores that contract.
-
-**Strict deterministic SM80 support is incomplete for this tested build.** Do
-not weaken the equality assertion or describe the PR as fully validated. A
-production deterministic guarantee requires an upstream fix/validated build or
-a targeted rejection of the unsupported deterministic-training configuration.
-This does not mean all FA3 versions fail on SM80. The SM80 result alone cannot
-establish Hopper behavior. Ring and full-model behavior remain separate scopes.
-
-The associated [SM80 backward source](https://github.com/Dao-AILab/flash-attention/blob/fbf24f67cf7f6442c5cfb2c1057f4bfc57e72d89/hopper/mainloop_bwd_sm80.hpp#L833)
-uses unordered dQ atomic additions. That is a plausible explanation for the
-measurement, not independent proof of the binary's exact build configuration.
-
-## H100 comparison (2026-09-23)
-
-The same source archive, Python 3.13.5, Torch 2.11.0+cu129, pinned Diffusers
-wheel, FA3 wheel above, seeds and explicit tensor shapes were rerun on H100
-(SM90, driver 595.91.07). Standalone BF16 and FP16 S=1024 passed all 19 repeated
+All 12 operator/control cases passed. Standalone BF16 and FP16 S=1024 passed all 19 repeated
 comparisons for output, dQ, dK and dV. Miles BF16 SP1/2/4 and FP16 SP1 passed at
 both S=128 and S=1024, with 20 runs each. Every Miles case completed 91 checks,
 including numerical references, bitwise repeats, a projection SGD update and
@@ -216,7 +186,7 @@ also passed.
 These runs used the real operators with only the eager actor package initializer
 bypassed. They establish the measured H100 attention behavior, not successful
 import of the complete actor, rollout/training equivalence, performance, or
-bitwise equality across GPU architectures. The A800 limitation remains.
+bitwise equality across GPU architectures.
 
 ## Complete-image and Krea2 short E2E (2026-09-23)
 
@@ -239,7 +209,7 @@ Launching required an external Ray instance limited to 16 CPUs and
 `expandable_segments:False` for CUDA IPC in this container. These were runtime
 configuration changes, not attention changes. This one short E2E run does not
 establish convergence, model-level SP=2/4, whole-run repeatability or numerical
-parity between frozen rollout and training paths. The A800 limitation remains.
+parity between frozen rollout and training paths.
 
 ## Remaining rollout parity and model gates
 

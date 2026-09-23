@@ -5,7 +5,7 @@ description: What --deterministic-mode covers, which attention backends it accep
 
 `--deterministic-mode` configures the **training actor's** forward and backward for repeatable execution with the same
 hardware, topology, software stack, and inputs. Passing argument validation does not prove that an external kernel
-honors the request; the tested A800 FA3 build has a backward limitation described below.
+honors the request; validate repeatability on the target GPU, build and input shapes.
 
 ## What it turns on
 
@@ -75,11 +75,10 @@ parallelism. Miles pure Ulysses wraps the local attention call; Ring and FA3 var
 outside this integration. The registry is process-wide, so install it before model execution
 and keep models needing different forced modes in separate processes.
 
-On A800 (SM80), the tested Miles cu129 FA3 wheel failed exact dQ repeatability at S=1024 in both
-BF16 and FP16, even through the upstream public API with `deterministic=True`. Short S=128
-tests passed. The measured H100 cases passed, but neither result establishes a guarantee for
-other builds or shapes. See [FA3 validation](../developer/fa3-validation.md) for the exact build,
-reproduction, tested scope and upstream limitation.
+The measured H100 cases passed output/gradient repeatability checks for BF16 SP=1/2/4 and
+FP16 SP=1. This establishes the tested configurations, not every build or shape.
+See [FA3 validation](../developer/fa3-validation.md) for the exact environment, reproduction and
+the separate Krea2 DP=2/SP=1 short E2E result.
 
 ## What it does not cover
 

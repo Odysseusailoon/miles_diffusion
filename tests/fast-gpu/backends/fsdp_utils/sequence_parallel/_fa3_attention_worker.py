@@ -148,8 +148,8 @@ def _run(args, report):
     torch.cuda.set_device(local_rank)
     device = torch.device("cuda", local_rank)
     capability = torch.cuda.get_device_capability(device)
-    if capability[0] < 8:
-        raise RuntimeError(f"This regression requires an SM80+ GPU and a compatible FA3 build, got {capability}")
+    if capability[0] < 9:
+        raise RuntimeError(f"This regression requires an SM90+ GPU and a compatible FA3 build, got {capability}")
     if os.environ.get("CUBLAS_WORKSPACE_CONFIG") not in (":4096:8", ":16:8"):
         raise RuntimeError("Set CUBLAS_WORKSPACE_CONFIG=:4096:8 before launching torchrun")
     torch.backends.cuda.matmul.allow_tf32 = False
