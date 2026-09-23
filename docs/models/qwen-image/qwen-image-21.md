@@ -50,8 +50,8 @@ The engine must be the sglang 2.1 branch and diffusers must export
 `PYTHONPATH`, point `SGLANG_21_PYTHON` and `DIFFUSERS_21_SRC` at them.
 Real-weight GRPO needs ≥80GB; 32GB only finished generate.
 
-**Status:** dummy alignment [● V — `log_prob_mean_abs_diff` 5e-5](../../user-guide/recipe-verification.md);
-real ckpt generate passed; real 1-GPU GRPO [○ NV on 32GB — OOM](../../user-guide/recipe-verification.md#nv)
+**Status:** [📈 V — Verified](../../user-guide/recipe-verification.md#v) — 200 rollouts.
+Smoothed `rollout/reward/raw_mean` rises from about 0.81 to about 0.86.
 
 ```bash
 # alignment diagnostic: freeze weights so log_prob_mean_abs_diff is train-vs-rollout
@@ -79,7 +79,18 @@ python3 scripts/run_diffusion_grpo_qwenimage21_pickscore_1gpu_v2.py \
   1024² without offload. Raise batch/resolution only after adding GPUs or
   component offload.
 
-## 6. Pairs well with
+## 6. Reference results
+
+The canonical 1-GPU recipe over 200 rollouts (512², 16×16, lr 1e-4):
+
+![Qwen-Image 2.1 PickScore reward mean](../../assets/images/qwen-image/reward_mean.png)
+
+Smoothed `rollout/reward/raw_mean` moves from about 0.81 to about 0.86.
+`train/log_prob_mean_abs_diff` stays near 4e-5 on the same run:
+
+![Qwen-Image 2.1 log-prob mean abs diff](../../assets/images/qwen-image/log_prob_mean_abs_diff.png)
+
+## 7. Pairs well with
 
 - [Qwen-Image 1.0](qwen-image.md) — the flow_grpo-aligned 5-GPU reference recipe.
 - [LoRA weight sync](../../advanced/lora.md) — `--lora-ipc-weight-sync` is on.
