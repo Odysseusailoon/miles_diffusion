@@ -218,14 +218,38 @@ bypassed. They establish the measured H100 attention behavior, not successful
 import of the complete actor, rollout/training equivalence, performance, or
 bitwise equality across GPU architectures. The A800 limitation remains.
 
-## Remaining rollout and model gate
+## Complete-image and Krea2 short E2E (2026-09-23)
+
+The complete official Miles image subsequently passed the normal pytest entry
+points: 48 focused CPU tests and all four strict GPU cases, without the operator
+bootstrap. On H100, pretrained Krea2 completed a short DP=2/SP=1 rollout/train/sync
+run: four NFT training steps and checkpoints, 16 generated samples with OCR
+rewards, EMA steps 1 through 5 and real LoRA IPC weight updates. The run exited 0.
+
+The trace checker passed over 2,106 records in 33 files. It observed 62 sampled
+main-training FA3 returns, all with `deterministic=True, num_splits=1`, and 110
+successful rollout FA3 v3 returns, with no traced masks or kernel errors. This
+confirms actual execution beyond backend flags; the trace is sampled, not a
+complete count of every attention call. Teardown emitted a loky resource-tracker
+warning, retained in the logs.
+
+The image was
+`radixark/miles_diffusion@sha256:ed008ae25cc0e80ef0ccebee7137b5c498bf86d4a6a5a79147cdc60ad6a6a2ce`.
+Launching required an external Ray instance limited to 16 CPUs and
+`expandable_segments:False` for CUDA IPC in this container. These were runtime
+configuration changes, not attention changes. This one short E2E run does not
+establish convergence, model-level SP=2/4, whole-run repeatability or numerical
+parity between frozen rollout and training paths. The A800 limitation remains.
+
+## Remaining rollout parity and model gates
 
 This patch changes the Diffusers training adapter. SGLang diffusion rollout has a
 separate attention implementation. A rollout flag or the name "FA3" alone does
 not establish that both sides executed compatible kernels.
 
-Before claiming end-to-end support, agree on the model, checkpoint revision,
-container, attention backend and pure-Ulysses topology. Then:
+For a new model or topology, agree on the model, checkpoint revision, container
+and attention backend. The completed Krea2 smoke covers an actual update/sync
+loop at SP=1; frozen rollout/train parity and model-level Ulysses still need:
 
 1. Instrument the actual SGLang diffusion attention call. Verify FA3/`fa_ver=3`,
    input layout, dtype, scale, mask, sequence lengths and split count. Its varlen
