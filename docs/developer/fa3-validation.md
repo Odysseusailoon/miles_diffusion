@@ -1,9 +1,11 @@
 # Dense FA3 training and pure Ulysses validation
 
-This regression targets `DiffusersModelBackend`, the `_flash_3` backend, and
+The operator regression targets `DiffusersModelBackend`, the `_flash_3` backend, and
 Miles pure Ulysses (`ring_degree=1`) on H100. It exercises real FA3 without
 downloading model weights. Passing it establishes attention-level correctness
 on the tested build/shapes, not full-model, FSDP2, or rollout/train equivalence.
+The separate tiny Wan gate below tests the production FSDP2/model integration;
+its native CPU control has passed, while its GPU FA3 result is pending.
 
 ## Why the adapter exists
 
@@ -181,6 +183,89 @@ Its time is total validation runtime, not an attention throughput benchmark.
 Run the gates in a fresh process again to check restart reproducibility as needed;
 this worker checks bitwise repeats within each process, not persisted cross-run
 tensor hashes.
+
+## Tiny Wan FSDP2 + Ulysses training gate (GPU result pending)
+
+This separate regression uses the genuine `WanTransformer3DModel` with random
+initial weights and synthetic inputs. It requires no pretrained checkpoint or
+downloads. It exercises `DiffusersModelBackend`, `Wan2_2TrainPipelineConfig`,
+`actor.apply_fsdp2`, the Wan GEMM patchification materialize hook, its existing
+`_cp_plan`, and the production sequence-parallel boundary/attention hooks.
+No new model support or package-import bypass is introduced.
+
+The fixture has two blocks, four attention heads of width 64, and global batch
+two. Latents/targets have shape `[2,4,2,32,64]`: two frames produce 1024 tokens
+after `(1,2,2)` patchification. SP2 splits across the frames, exercising temporal
+as well as spatial RoPE. Text length is 17, deliberately indivisible by two:
+text cross-attention must retain complete conditioning while self-attention
+uses Ulysses. Timesteps are 1D per example; the TI2V per-token timestep path is
+outside this fixture.
+
+Both layouts use two ranks: DP2/SP1 processes one distinct example per rank;
+DP1/SP2 processes the same global batch on both ranks. Every case starts from
+the same FP32 parameters and uses the same two precomputed batches, timesteps,
+and targets. Two SGD steps run with checkpointing off and on, each repeated
+twice. Master parameters and gradient reduction are FP32; CUDA computation uses
+BF16 autocast with FP32 boundary inputs and the production Wan `norm2` FP32
+override. The FP32 local-batch MSE equals the production SFT per-pair loss sum
+divided by the local pair count. Production gather backward and FSDP averaging
+provide the SP normalization; no extra gradient multiplier is applied.
+
+Acceptance criteria are fixed before GPU execution:
+
+- Compare complete output, global reporting loss, all 69 trainable parameter
+  gradients, and cumulative parameter deltas from the initial state after each
+  update. Require finite values and nonzero aggregate gradients/step updates.
+- Cross-topology and checkpoint comparisons require output/loss relative L2
+  error at most `0.02`, gradient/delta relative L2 at most `0.05`, and normalized
+  maximum error at most `0.10`. Near-zero per-tensor denominators have declared
+  floors of `group L2 * 1e-6` and `group peak * 1e-4`; complete concatenated
+  vectors have no group-relative floor. Actual per-parameter errors are saved.
+- Fixed-topology/configuration repetitions require bitwise equality. Numerical
+  negative controls must reject doubled updates, zero updates, and a missing
+  second update. Do not widen bounds after a failing GPU result.
+- Every attention layer is traced at the real public FA3 function, asserting
+  BF16 Q/K/V on the same CUDA device, expected self/cross-attention shapes,
+  `deterministic=True`, and `num_splits=1`. The default matrix expects 96 call
+  entries per rank: 64 original-forward entries and 32 checkpoint-recompute
+  entries during backward. A separate `completed` flag records actual returns;
+  non-reentrant checkpoint early-stop can interrupt a recompute call. Original
+  forward entries must complete. Entry counts are not return counts.
+- Live `norm2` hooks require FP32 weights in 48 observations per rank, including
+  checkpoint recomputation. The matrix produces sixteen update records and
+  2304 comparisons per rank, including 1152 bitwise repeat checks.
+
+Run the registered test with two compatible GPUs in the complete Miles image:
+
+```bash
+PYTHONPATH="$PWD" python -m pytest -x -q \
+  tests/fast-gpu/backends/fsdp_utils/sequence_parallel/test_fa3_wan.py
+```
+
+It is registered in `stage-c-5-gpu-h200` with the `fsdp` label. CUDA CI fails for
+missing GPUs/FA3. The launcher kills its complete worker process group on a
+360-second timeout; the worker's distributed-operation timeout is 180 seconds.
+Preserve both rank JSON reports and the pytest exit/JUnit result.
+
+The explicit native FP32 CPU control passed on two Gloo ranks with real FSDP2:
+**2304 checks per rank, all 1152 repeat checks bitwise equal**, and all three
+negative controls rejected. The final two-frame S1024 fixture took about 10.25
+seconds per rank after setup. Its stricter CPU budgets were relative L2 `1e-4`
+and normalized maximum `1e-3`; observed maxima were `5.786e-5` and `2.578e-4`.
+This CPU result does not validate FA3 or BF16. Its invocation is:
+
+```bash
+PYTHONPATH="$PWD" python -m torch.distributed.run \
+  --nnodes=1 --nproc-per-node=2 --master-addr=127.0.0.1 --master-port=29571 \
+  tests/fast-gpu/backends/fsdp_utils/sequence_parallel/_fa3_wan_worker.py \
+  --cpu-sanity --backend native --seq-len 1024 \
+  --output-json artifacts/fa3/wan-sp2-cpu.json
+```
+
+The **GPU result is pending**. A future pass would establish this tiny real
+architecture's FSDP2/SP2 training integration. It would not establish pretrained
+Wan quality/convergence, the complete Ray actor lifecycle, SGLang rollout,
+NFT/GRPO, Krea SP2, model SP4, or performance.
 
 ## H100 validation (2026-09-23)
 
