@@ -164,7 +164,7 @@ def _run(args, report):
 
     from diffusers.models import attention_dispatch
 
-    if not callable(getattr(attention_dispatch, "flash_attn_3_func", None)):
+    if not callable(attention_dispatch.flash_attn_3_func):
         raise RuntimeError("FA3 must be installed and importable by Diffusers; FA2 is not sufficient")
 
     from miles.backends.fsdp_utils.fa3_attention import install_diffusers_fa3_attention

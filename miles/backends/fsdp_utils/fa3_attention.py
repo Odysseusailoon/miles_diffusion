@@ -24,7 +24,7 @@ def install_diffusers_fa3_attention(*, deterministic: bool = False) -> None:
     """
     import diffusers.models.attention_dispatch as ad
 
-    kernel = getattr(ad, "flash_attn_3_func", None)
+    kernel = ad.flash_attn_3_func
     try:
         parameters = inspect.signature(kernel).parameters if callable(kernel) else {}
     except (TypeError, ValueError):

@@ -433,7 +433,7 @@ def main() -> None:
             raise RuntimeError("This FA3 regression requires an SM90+ GPU and compatible FA3 installation")
         import diffusers.models.attention_dispatch as dispatch
 
-        if not callable(getattr(dispatch, "flash_attn_3_func", None)):
+        if not callable(dispatch.flash_attn_3_func):
             raise RuntimeError("Real FA3 kernel missing; no SDPA fallback is allowed")
     dist.init_process_group("gloo" if args.cpu_sanity else "nccl", timeout=timedelta(seconds=args.timeout_seconds))
     from diffusers import WanTransformer3DModel
