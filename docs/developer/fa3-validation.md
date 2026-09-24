@@ -5,7 +5,7 @@ Miles pure Ulysses (`ring_degree=1`) on H100. It exercises real FA3 without
 downloading model weights. Passing it establishes attention-level correctness
 on the tested build/shapes, not full-model, FSDP2, or rollout/train equivalence.
 The separate tiny Wan gate below tests the production FSDP2/model integration;
-its native CPU control has passed, while its GPU FA3 result is pending.
+both its native CPU control and two-H100 FA3/SP2 training run passed.
 
 ## Why the adapter exists
 
@@ -184,7 +184,7 @@ Run the gates in a fresh process again to check restart reproducibility as neede
 this worker checks bitwise repeats within each process, not persisted cross-run
 tensor hashes.
 
-## Tiny Wan FSDP2 + Ulysses training gate (GPU result pending)
+## Tiny Wan FSDP2 + Ulysses training validation
 
 This separate regression uses the genuine `WanTransformer3DModel` with random
 initial weights and synthetic inputs. It requires no pretrained checkpoint or
@@ -262,10 +262,40 @@ PYTHONPATH="$PWD" python -m torch.distributed.run \
   --output-json artifacts/fa3/wan-sp2-cpu.json
 ```
 
-The **GPU result is pending**. A future pass would establish this tiny real
-architecture's FSDP2/SP2 training integration. It would not establish pretrained
-Wan quality/convergence, the complete Ray actor lifecycle, SGLang rollout,
-NFT/GRPO, Krea SP2, model SP4, or performance.
+The **two-H100 GPU run passed on 2026-09-23 (PT)** through the normal pytest
+entry point: one test, zero failures/errors/skips, 42.41 seconds. Each rank
+completed 2304 numerical comparisons and sixteen update records over eight
+cases, checking all 69 trainable parameter tensors. All 1152 fixed-configuration
+repeat comparisons were bitwise equal. Checkpoint on/off comparisons were also
+bitwise equal in this run. All three numerical negative controls were rejected.
+
+Observed SP1/SP2 relative L2 maxima (the declared limits were unchanged):
+
+| Quantity | Full-tensor/vector maximum | Worst individual parameter maximum |
+| --- | ---: | ---: |
+| Output | 0.002740 | — |
+| Loss | 0.00002426 | — |
+| Gradients | 0.001843 | 0.02044 |
+| Parameter deltas | 0.001701 | 0.01799 |
+
+The full-vector comparisons have no denominator floor; the parameter-wise
+column uses the documented group-relative floors. All SP1/SP2 normalized maximum
+errors were below 0.01876, within the fixed 0.10 budget. Each rank recorded
+96 real FA3 entries and 96 successful returns: 64 original forwards and 32
+checkpoint recomputations, all BF16 with `deterministic=True, num_splits=1`.
+All 48 live `norm2` observations per rank retained FP32 weights.
+
+The environment was two NVIDIA H100 80GB HBM3 GPUs connected by NVLink,
+Python 3.12.3, Torch 2.11.0+cu129, CUDA 12.9, NCCL 2.28.9 and Diffusers
+0.40.0.dev0 in the pinned complete Miles image below. The FA3 interface SHA256
+was `a85d9b9b8ecf4284e967f3bb6da7522dfe2f80cbd4ae7e4752d054e1ff6b7685`.
+The verified 144-file runtime snapshot matched test/source commit `634b591`;
+unrelated test files remained at the recorded upstream base. The output archive
+SHA256 was `d6264380c25ebda2eb95d6ba43c4298e2167e1cdd06ea945bde6bc01228e3695`.
+
+This establishes this tiny real architecture's FSDP2/FA3/SP2 training integration.
+It does not establish pretrained Wan quality/convergence, the complete Ray
+actor lifecycle, SGLang rollout, NFT/GRPO, Krea SP2, model SP4, or performance.
 
 ## H100 validation (2026-09-23)
 
